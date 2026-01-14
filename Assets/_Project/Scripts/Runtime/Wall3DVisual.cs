@@ -35,7 +35,7 @@ public sealed class Wall3DVisual : MonoBehaviour
     float ang = Mathf.Deg2Rad * (60f * d);
 
     // ВАЖНО: инвертируем Z, чтобы направления совпали с ориентацией гекс-сетки в проекте
-    return new Vector3(Mathf.Cos(ang), 0f, -Mathf.Sin(ang));
+    return new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang));
 }
 
     public void SetDimensions(float thicknessAbs, float heightAbs)
