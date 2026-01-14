@@ -24,7 +24,7 @@ public sealed class EnemyWallDamage : MonoBehaviour
 
     private void Awake()
     {
-        agent = GetComponent<NavMeshAgent>(); // может отсутствовать – это нормально
+        agent = GetComponent<NavMeshAgent>();
         rb = GetComponent<Rigidbody>();
     }
 
@@ -32,7 +32,7 @@ public sealed class EnemyWallDamage : MonoBehaviour
     {
         if (!holding) return;
 
-        // если давно нет контакта — отпускаем
+        // если давно нет контакта – отпускаем
         if (Time.time >= releaseAt)
         {
             Release();
@@ -55,15 +55,19 @@ public sealed class EnemyWallDamage : MonoBehaviour
 
     private void Hold(WallTileLink link)
     {
-        holding = true;
+        if (link == null) return;
+
+        // “контакт живой” – продлеваем удержание
         releaseAt = Time.time + Mathf.Max(0.02f, releaseDelay);
 
-        // если цель сменилась – бьем сразу
-        if (currentLink != link)
-        {
-            currentLink = link;
+        // ВАЖНО: “удар сразу” только при первом захвате, а не при смене коллайдера
+        bool startingHold = !holding;
+
+        holding = true;
+        currentLink = link;
+
+        if (startingHold)
             attackTimer = 0f;
-        }
 
         if (!stopMovementWhileAttacking) return;
 
@@ -94,7 +98,6 @@ public sealed class EnemyWallDamage : MonoBehaviour
     {
         var link = collision.collider.GetComponentInParent<WallTileLink>();
         if (link == null) return;
-
         Hold(link);
     }
 
@@ -102,7 +105,6 @@ public sealed class EnemyWallDamage : MonoBehaviour
     {
         var link = other.GetComponentInParent<WallTileLink>();
         if (link == null) return;
-
         Hold(link);
     }
 }
