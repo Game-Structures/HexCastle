@@ -26,13 +26,11 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
             castle = grid.CastleTransform;
     }
 
-    // Legacy entry point (if где-то дергается извне)
     public void SpawnOnePublic()
     {
         SpawnOneRandomForCurrentWave();
     }
 
-    // NEW: спавн конкретного типа (для WavePlan / подволн)
     public void SpawnSpecific(EnemyType type)
     {
         if (type == null)
@@ -75,7 +73,6 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
             return;
         }
 
-        // до 30 попыток найти свободную крайнюю клетку
         for (int attempt = 0; attempt < 30; attempt++)
         {
             var cell = grid.EdgeCells[Random.Range(0, grid.EdgeCells.Count)];
@@ -87,7 +84,6 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
 
             Vector3 pos = cell.transform.position + new Vector3(0f, 0.3f, 0f);
             GameObject go = Instantiate(prefab, pos, Quaternion.identity);
-
             go.name = $"Enemy_{typeId}";
 
             var hp = go.GetComponent<EnemyHealth>();
@@ -99,7 +95,14 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
             mover.SetTarget(castle);
             if (stats != null) mover.SetStats(stats);
 
-            Debug.Log($"[EnemySpawner] Spawned type={typeId} wave={wave} prefab={prefab.name} hp={(stats != null ? stats.maxHp : 100)} speed={(stats != null ? stats.speed : 2f)}");
+            // ВАЖНО: урон по стенам через EnemyWallDamage (из EnemyStats)
+            var wallDmg = go.GetComponent<EnemyWallDamage>();
+            if (wallDmg == null) wallDmg = go.AddComponent<EnemyWallDamage>();
+
+            wallDmg.enabled = true;          // на случай если был выключен в префабе
+            if (stats != null) wallDmg.SetStats(stats);
+
+            Debug.Log($"[EnemySpawner] Spawned type={typeId} wave={wave} dmg={(stats != null ? stats.attackDamage : 50)} int={(stats != null ? stats.attackInterval : 5f)}");
             return;
         }
 

@@ -3,12 +3,12 @@ using UnityEngine;
 public sealed class CastleShooter : MonoBehaviour
 {
     [Header("Range in cells")]
-    [SerializeField] private int rangeCells = 3;
+    [SerializeField] private int rangeCells = 5;
     [SerializeField] private float hexSize = 1f;
 
     [Header("Attack")]
     [SerializeField] private int damage = 60;
-    [SerializeField] private float attackInterval = 3f;
+    [SerializeField] private float attackInterval = 2f;
 
     [Header("Projectile")]
     [SerializeField] private CastleProjectile projectilePrefab; // можно оставить пустым

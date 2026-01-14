@@ -16,31 +16,31 @@ MonoBehaviour:
   - waveNumber: 1
     subWaves:
     - delayFromPrevious: 0
-      spawnInterval: 0.33
+      spawnInterval: 0.5
       packs:
       - type: {fileID: 11400000, guid: a1cc4ad4dfbf53d45844dfa62935712a, type: 2}
         count: 2
     - delayFromPrevious: 5
-      spawnInterval: 0.33
+      spawnInterval: 0.5
       packs:
       - type: {fileID: 11400000, guid: a1cc4ad4dfbf53d45844dfa62935712a, type: 2}
-        count: 3
+        count: 2
   - waveNumber: 2
     subWaves:
     - delayFromPrevious: 0
-      spawnInterval: 0.33
+      spawnInterval: 0.5
       packs:
       - type: {fileID: 11400000, guid: a1cc4ad4dfbf53d45844dfa62935712a, type: 2}
-        count: 3
+        count: 2
     - delayFromPrevious: 5
-      spawnInterval: 0.33
+      spawnInterval: 0.5
       packs:
+      - type: {fileID: 11400000, guid: a1cc4ad4dfbf53d45844dfa62935712a, type: 2}
+        count: 2
+    - delayFromPrevious: 5
+      spawnInterval: 0.5
+      packs:
+      - type: {fileID: 11400000, guid: a1cc4ad4dfbf53d45844dfa62935712a, type: 2}
+        count: 2
       - type: {fileID: 11400000, guid: 666867665719b3c4b8bb71d93eb53bd6, type: 2}
-        count: 2
-      - type: {fileID: 11400000, guid: a1cc4ad4dfbf53d45844dfa62935712a, type: 2}
-        count: 2
-    - delayFromPrevious: 5
-      spawnInterval: 0.33
-      packs:
-      - type: {fileID: 11400000, guid: a1cc4ad4dfbf53d45844dfa62935712a, type: 2}
-        count: 3
+        count: 1

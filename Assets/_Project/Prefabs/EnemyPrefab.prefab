@@ -143,9 +143,11 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5787235187179916555}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 00164a6ee71a8a746a25139d1c12b0a0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  damagePerSecond: 80
+  stats: {fileID: 11400000, guid: 06539ef40b996e04aa5097e6373e3fb7, type: 2}
+  stopMovementWhileAttacking: 1
+  releaseDelay: 0.15

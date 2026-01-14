@@ -4,7 +4,8 @@ using UnityEngine.AI;
 [DisallowMultipleComponent]
 public sealed class EnemyWallDamage : MonoBehaviour
 {
-    [SerializeField] private float damagePerSecond = 80f;
+    [Header("Stats (can be set by spawner)")]
+    [SerializeField] private EnemyStats stats;
 
     [Header("Stop while attacking")]
     [SerializeField] private bool stopMovementWhileAttacking = true;
@@ -16,27 +17,55 @@ public sealed class EnemyWallDamage : MonoBehaviour
     private bool holding;
     private float releaseAt;
 
-    void Awake()
+    private WallTileLink currentLink;
+    private float attackTimer;
+
+    public void SetStats(EnemyStats s) => stats = s;
+
+    private void Awake()
     {
-        agent = GetComponent<NavMeshAgent>();
+        agent = GetComponent<NavMeshAgent>(); // может отсутствовать – это нормально
         rb = GetComponent<Rigidbody>();
     }
 
-    void Update()
+    private void Update()
     {
         if (!holding) return;
 
         // если давно нет контакта — отпускаем
         if (Time.time >= releaseAt)
+        {
             Release();
+            return;
+        }
+
+        if (currentLink == null) return;
+
+        float interval = stats != null ? stats.attackInterval : 5f;
+        float damage = stats != null ? stats.attackDamage : 50f;
+
+        if (interval <= 0f || damage <= 0f) return;
+
+        attackTimer -= Time.deltaTime;
+        if (attackTimer > 0f) return;
+
+        attackTimer = Mathf.Max(0.02f, interval);
+        currentLink.ApplyDamage(damage);
     }
 
-    void Hold()
+    private void Hold(WallTileLink link)
     {
-        if (!stopMovementWhileAttacking) return;
-
         holding = true;
         releaseAt = Time.time + Mathf.Max(0.02f, releaseDelay);
+
+        // если цель сменилась – бьем сразу
+        if (currentLink != link)
+        {
+            currentLink = link;
+            attackTimer = 0f;
+        }
+
+        if (!stopMovementWhileAttacking) return;
 
         if (agent != null)
         {
@@ -52,18 +81,13 @@ public sealed class EnemyWallDamage : MonoBehaviour
         }
     }
 
-    void Release()
+    private void Release()
     {
         holding = false;
+        currentLink = null;
 
         if (agent != null)
             agent.isStopped = false;
-    }
-
-    void Damage(WallTileLink link)
-    {
-        if (damagePerSecond <= 0f) return;
-        link.ApplyDamage(damagePerSecond * Time.deltaTime);
     }
 
     private void OnCollisionStay(Collision collision)
@@ -71,8 +95,7 @@ public sealed class EnemyWallDamage : MonoBehaviour
         var link = collision.collider.GetComponentInParent<WallTileLink>();
         if (link == null) return;
 
-        Hold();
-        Damage(link);
+        Hold(link);
     }
 
     private void OnTriggerStay(Collider other)
@@ -80,7 +103,6 @@ public sealed class EnemyWallDamage : MonoBehaviour
         var link = other.GetComponentInParent<WallTileLink>();
         if (link == null) return;
 
-        Hold();
-        Damage(link);
+        Hold(link);
     }
 }
