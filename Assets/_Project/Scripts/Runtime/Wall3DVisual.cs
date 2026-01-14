@@ -35,7 +35,7 @@ public sealed class Wall3DVisual : MonoBehaviour
     float ang = Mathf.Deg2Rad * (60f * d);
 
     // ВАЖНО: инвертируем Z, чтобы направления совпали с ориентацией гекс-сетки в проекте
-    return new Vector3(Mathf.Cos(ang), 0f, -Mathf.Sin(ang));
+    return new Vector3(Mathf.Cos(ang), 0f, -    Mathf.Sin(ang));
 }
 
     public void SetDimensions(float thicknessAbs, float heightAbs)
@@ -123,7 +123,7 @@ public sealed class Wall3DVisual : MonoBehaviour
         float baseY = height * 0.5f;
 
         // ВАЖНО: крутим только внутренний root, а не внешний объект
-        _root.localRotation = Quaternion.Euler(0f, -rotationSteps * 60f, 0f);
+        _root.localRotation = Quaternion.Euler(0f, rotationSteps * 60f, 0f);
 
         int connCount = CountBits(connectedMask);
 
