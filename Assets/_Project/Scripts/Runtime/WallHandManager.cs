@@ -20,10 +20,16 @@ public sealed class WallHandManager : MonoBehaviour
     [SerializeField] private Sprite spriteSmallCurve;
     [SerializeField] private Sprite spriteStrongCurve;
     [SerializeField] private Sprite spriteSplit;
-[SerializeField] private WaveController wave;
+
+    [SerializeField] private WaveController wave;
+
+    // ВАЖНО: храним ДВА списка: типы и повороты (0..5) для каждого слота
     private readonly List<WallTileType> hand = new();
+    private readonly List<int> handRot = new(); // 0..5
 
     public IReadOnlyList<WallTileType> Hand => hand;
+
+    // оставляем как было (для HUD)
     public int SelectedIndex { get; private set; } = 0;
     public int Rotation { get; private set; } = 0;
 
@@ -43,7 +49,6 @@ public sealed class WallHandManager : MonoBehaviour
 
         slots = FindObjectsByType<WallHandSlot>(FindObjectsSortMode.None);
 
-        // Ensure slotIndex is sane even if Awake order differs
         if (slots != null)
         {
             foreach (var s in slots)
@@ -62,32 +67,28 @@ public sealed class WallHandManager : MonoBehaviour
         Debug.Log($"[WallHandManager] Slots bound: {(slots == null ? 0 : slots.Length)}");
     }
 
-private void AutoBindRefreshButton()
-{
-    if (wave == null) wave = FindFirstObjectByType<WaveController>();
-
-    
-    if (refreshButtonBound) return;
-
-    var go = GameObject.Find("RefreshButton");
-    if (go == null) return;
-
-    var btn = go.GetComponent<Button>();
-    if (btn == null) return;
-
-    // Если кнопка уже настроена в инспекторе – НЕ добавляем ещё один listener
-    if (btn.onClick.GetPersistentEventCount() > 0)
+    private void AutoBindRefreshButton()
     {
+        if (wave == null) wave = FindFirstObjectByType<WaveController>();
+        if (refreshButtonBound) return;
+
+        var go = GameObject.Find("RefreshButton");
+        if (go == null) return;
+
+        var btn = go.GetComponent<Button>();
+        if (btn == null) return;
+
+        if (btn.onClick.GetPersistentEventCount() > 0)
+        {
+            refreshButtonBound = true;
+            Debug.Log("[WallHandManager] RefreshButton already has persistent OnClick binding – skipping auto-bind.");
+            return;
+        }
+
+        btn.onClick.AddListener(RefreshHand);
         refreshButtonBound = true;
-        Debug.Log("[WallHandManager] RefreshButton already has persistent OnClick binding – skipping auto-bind.");
-        return;
+        Debug.Log("[WallHandManager] RefreshButton auto-bound to RefreshHand().");
     }
-
-    btn.onClick.AddListener(RefreshHand);
-    refreshButtonBound = true;
-    Debug.Log("[WallHandManager] RefreshButton auto-bound to RefreshHand().");
-}
-
 
     private void EnsureHandSize()
     {
@@ -95,6 +96,15 @@ private void AutoBindRefreshButton()
 
         while (hand.Count < handSize) hand.Add(WallTileType.None);
         while (hand.Count > handSize) hand.RemoveAt(hand.Count - 1);
+
+        while (handRot.Count < handSize) handRot.Add(0);
+        while (handRot.Count > handSize) handRot.RemoveAt(handRot.Count - 1);
+    }
+
+    public int GetHandRotation(int index)
+    {
+        if (index < 0 || index >= handRot.Count) return 0;
+        return Mod6(handRot[index]);
     }
 
     public void NewRoundHand()
@@ -103,24 +113,28 @@ private void AutoBindRefreshButton()
         EnsureHandSize();
 
         for (int i = 0; i < handSize; i++)
+        {
             hand[i] = RandomType();
+            handRot[i] = Random.Range(0, 6); // 0..5
+        }
 
         SelectedIndex = 0;
         Rotation = 0;
 
         UpdateUI();
+        LogHandToConsole();
+
         Debug.Log("[WallHandManager] NewRoundHand dealt.");
     }
 
     public void RefreshHand()
     {
-       if (wave != null && wave.CurrentPhase != WaveController.Phase.Build)
-{
-    Debug.Log("[WallHandManager] Refresh blocked: COMBAT phase");
-    return;
-}
+        if (wave != null && wave.CurrentPhase != WaveController.Phase.Build)
+        {
+            Debug.Log("[WallHandManager] Refresh blocked: COMBAT phase");
+            return;
+        }
 
-        
         Debug.Log("[WallHandManager] RefreshHand clicked.");
 
         if (!GoldBank.TrySpend(refreshCost))
@@ -157,6 +171,7 @@ private void AutoBindRefreshButton()
     {
         if (index < 0 || index >= hand.Count) return;
         hand[index] = WallTileType.None;
+        handRot[index] = 0;
         UpdateUI();
     }
 
@@ -176,6 +191,7 @@ private void AutoBindRefreshButton()
 
             int idx = slot.slotIndex;
             WallTileType t = (idx >= 0 && idx < hand.Count) ? hand[idx] : WallTileType.None;
+            int rot = (idx >= 0 && idx < handRot.Count) ? Mod6(handRot[idx]) : 0;
 
             if (t == WallTileType.None)
             {
@@ -185,6 +201,24 @@ private void AutoBindRefreshButton()
 
             slot.SetTile(t);
             slot.SetSprite(GetSprite(t));
+
+            // ВАЖНО: всегда выставляем rotation из handRot (единый источник)
+            slot.SetRotation(rot);
+        }
+    }
+
+    private void LogHandToConsole()
+    {
+        for (int i = 0; i < handSize; i++)
+        {
+            var t = hand[i];
+            int rot = Mod6(handRot[i]);
+
+            int baseMask = BaseMask(t);
+            int mask = RotateMask(baseMask, rot);
+            string dirs = MaskToLetters(mask);
+
+            Debug.Log($"Tile {i + 1}: {t} Direction: {dirs} Rotation: {rot}");
         }
     }
 
@@ -210,5 +244,63 @@ private void AutoBindRefreshButton()
             WallTileType.Split => spriteSplit,
             _ => null
         };
+    }
+
+    // --- helpers (как модель TilePlacement) ---
+
+    private static int BaseMask(WallTileType type)
+    {
+        // как в TilePlacement.GetBaseMask() :contentReference[oaicite:2]{index=2}
+        return type switch
+        {
+            WallTileType.Straight    => (1 << 4) | (1 << 1),             // D–A
+            WallTileType.SmallCurve  => (1 << 4) | (1 << 5),             // D–C
+            WallTileType.StrongCurve => (1 << 4) | (1 << 0),             // D–B
+            WallTileType.Split       => (1 << 4) | (1 << 0) | (1 << 2),  // D–B–F
+            _ => 0
+        };
+    }
+
+    private const int FullMask = (1 << 6) - 1;
+
+    private static int RotateMask(int baseMask, int rot)
+    {
+        rot = Mod6(rot);
+        int left = (baseMask << rot) & FullMask;
+        int right = (baseMask >> (6 - rot)) & FullMask;
+        return (left | right) & FullMask;
+    }
+
+    private static int Mod6(int v)
+    {
+        v %= 6;
+        if (v < 0) v += 6;
+        return v;
+    }
+
+    // A=NE(1), B=E(0), C=SE(5), D=SW(4), E=W(3), F=NW(2)
+    private static string MaskToLetters(int mask)
+    {
+        var letters = new List<string>(3);
+
+        // порядок вывода A,B,C,D,E,F
+        int[] dirs = { 1, 0, 5, 4, 3, 2 };
+        foreach (int d in dirs)
+        {
+            if ((mask & (1 << d)) == 0) continue;
+            letters.Add(d switch
+            {
+                1 => "A",
+                0 => "B",
+                5 => "C",
+                4 => "D",
+                3 => "E",
+                2 => "F",
+                _ => "?"
+            });
+        }
+
+        if (letters.Count == 0) return "Unknown";
+        return string.Join(" - ", letters);
     }
 }

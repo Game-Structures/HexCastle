@@ -24,7 +24,7 @@ public sealed class WallDragController : MonoBehaviour
     [Header("Ghost behavior")]
     [SerializeField] private bool snapGhostToCellWhenHolding = true;
     [SerializeField] private bool autoFitGhostToCell = true;
-    [SerializeField] private float ghostFitPadding = 1.00f; // 1.0 = как клетка, 0.95 = чуть меньше
+    [SerializeField] private float ghostFitPadding = 1.00f;
 
     [Header("Debug")]
     [SerializeField] private bool debugLogs = true;
@@ -39,7 +39,6 @@ public sealed class WallDragController : MonoBehaviour
 
     private HexCellView hoverCell;
 
-    // Ghost
     private RectTransform ghostRect;
     private Image ghostImg;
     private CanvasGroup ghostCg;
@@ -75,7 +74,6 @@ public sealed class WallDragController : MonoBehaviour
         if (placement == null) placement = FindFirstObjectByType<TilePlacement>();
         if (hudCanvas == null) hudCanvas = FindFirstObjectByType<Canvas>();
 
-        // Автопоиск кнопок внутри floatingControlsRoot (даже если объект выключен)
         if (floatingControlsRoot != null)
         {
             if (rotateButton == null) rotateButton = FindButtonByNameContains(floatingControlsRoot, "Rotate");
@@ -116,8 +114,6 @@ public sealed class WallDragController : MonoBehaviour
         }
     }
 
-    // --- Called by WallHandSlot ------------------------------------------------
-
     public void BeginDrag(WallHandSlot slot) => BeginDrag(slot, null);
 
     public void BeginDrag(WallHandSlot slot, PointerEventData eventData)
@@ -127,7 +123,9 @@ public sealed class WallDragController : MonoBehaviour
 
         activeSlot = slot;
         activeType = slot.TileType;
-        rotation = 0;
+
+        // ВАЖНО: берём rotation из слота (единая система)
+        rotation = slot.GetRotation();
 
         hoverCell = null;
         holding = false;
@@ -141,7 +139,7 @@ public sealed class WallDragController : MonoBehaviour
         UpdateHoverCell(lastScreenPos);
         UpdateGhost(lastScreenPos);
 
-        if (debugLogs) Debug.Log($"[WallDrag] BeginDrag slot={slot.slotIndex} type={activeType}");
+        if (debugLogs) Debug.Log($"[WallDrag] BeginDrag slot={slot.slotIndex} type={activeType} rot={rotation}");
     }
 
     public void Drag(PointerEventData eventData)
@@ -182,15 +180,11 @@ public sealed class WallDragController : MonoBehaviour
 
         holding = true;
 
-        // ВАЖНО: сразу снапаем ghost на центр клетки перед показом контролов
         UpdateGhost(lastScreenPos);
-
         ShowControlsAtCell(hoverCell);
 
         if (debugLogs) Debug.Log($"[WallDrag] EndDrag over cell q={hoverCell.q} r={hoverCell.r}");
     }
-
-    // --- UI -------------------------------------------------------------------
 
     public void UiConfirm()
     {
@@ -214,8 +208,6 @@ public sealed class WallDragController : MonoBehaviour
         if (hoverCell != null && floatingControlsRoot != null && floatingControlsRoot.gameObject.activeSelf)
             ShowControlsAtCell(hoverCell);
     }
-
-    // --- Placement ------------------------------------------------------------
 
     private void ConfirmPlace()
     {
@@ -269,8 +261,6 @@ public sealed class WallDragController : MonoBehaviour
         DestroyGhost();
     }
 
-    // --- Hover cell -----------------------------------------------------------
-
     private void UpdateHoverCell(Vector2 screenPos)
     {
         hoverCell = RaycastHexCell(screenPos);
@@ -287,8 +277,6 @@ public sealed class WallDragController : MonoBehaviour
 
         return null;
     }
-
-    // --- Controls positioning -------------------------------------------------
 
     private void HideControls()
     {
@@ -308,8 +296,6 @@ public sealed class WallDragController : MonoBehaviour
         floatingControlsRoot.anchoredPosition = anchored + controlsOffset;
     }
 
-    // --- Ghost ----------------------------------------------------------------
-
     private void CreateGhostFromSlot(WallHandSlot slot)
     {
         if (hudCanvas == null) return;
@@ -323,7 +309,6 @@ public sealed class WallDragController : MonoBehaviour
             ghostImg = go.GetComponent<Image>();
             ghostCg = go.GetComponent<CanvasGroup>();
 
-            // якоря/пивот по центру, чтобы вращение было корректным
             ghostRect.anchorMin = new Vector2(0.5f, 0.5f);
             ghostRect.anchorMax = new Vector2(0.5f, 0.5f);
             ghostRect.pivot = new Vector2(0.5f, 0.5f);
@@ -350,33 +335,21 @@ public sealed class WallDragController : MonoBehaviour
     {
         if (ghostRect == null || hudCanvas == null) return;
 
-        // 1) позиция: в BUILD-holding снапаем в центр клетки
         Vector2 anchoredPos;
         if (snapGhostToCellWhenHolding && holding && hoverCell != null)
-        {
             anchoredPos = ScreenToAnchored(WorldToScreen(hoverCell.transform.position));
-        }
         else
-        {
             anchoredPos = ScreenToAnchored(screenPos);
-        }
 
         ghostRect.anchoredPosition = anchoredPos;
 
-        // 2) размер: подгоняем в размер клетки на экране (опционально)
         if (autoFitGhostToCell && hoverCell != null && hoverCell.rend != null && TryGetGhostSizeFromCell(hoverCell, out float px))
-        {
             ghostRect.sizeDelta = new Vector2(px, px);
-        }
         else
-        {
             ghostRect.sizeDelta = ghostSize;
-        }
 
-        // 3) вращение
         ghostRect.localEulerAngles = new Vector3(0f, 0f, -rotation * 60f);
 
-        // 4) держим спрайт актуальным
         if (activeSlot != null && activeSlot.icon != null && ghostImg != null)
         {
             var spr = activeSlot.icon.sprite;
@@ -397,12 +370,10 @@ public sealed class WallDragController : MonoBehaviour
         var c = b.center;
         var e = b.extents;
 
-        // ширина по X
         var l = cam.WorldToScreenPoint(c - new Vector3(e.x, 0f, 0f));
         var r = cam.WorldToScreenPoint(c + new Vector3(e.x, 0f, 0f));
         float w = Mathf.Abs(r.x - l.x);
 
-        // высота по Z (в screen Y при top-down обычно это даёт адекватную оценку)
         var d = cam.WorldToScreenPoint(c - new Vector3(0f, 0f, e.z));
         var u = cam.WorldToScreenPoint(c + new Vector3(0f, 0f, e.z));
         float h = Mathf.Abs(u.y - d.y);
@@ -424,8 +395,6 @@ public sealed class WallDragController : MonoBehaviour
             ghostCg = null;
         }
     }
-
-    // --- Helpers --------------------------------------------------------------
 
     private Vector2 WorldToScreen(Vector3 worldPos)
     {

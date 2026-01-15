@@ -17,15 +17,19 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
     private bool hasTile;
     private WallTileType tileType = WallTileType.None;
 
+    // ЕДИНЫЙ источник rotation для этого слота (0..5)
+    [SerializeField] private int rotationSteps;
+
     public bool HasTile => hasTile;
     public WallTileType TileType => tileType;
     public TMP_Text Label => label;
+
+    public int GetRotation() => rotationSteps;
 
     private void Awake()
     {
         if (drag == null) drag = FindFirstObjectByType<WallDragController>();
 
-        // Auto-bind label/icon if not assigned
         if (label == null)
         {
             var tmp = transform.Find("Text (TMP)");
@@ -54,17 +58,11 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
             }
         }
 
-        // Auto slotIndex from object name: TileSlot0/1/2
         if (name.StartsWith("TileSlot"))
         {
             if (int.TryParse(name.Replace("TileSlot", ""), out int idx))
                 slotIndex = idx;
         }
-
-        if (icon == null)
-            Debug.LogWarning($"[WallHandSlot] Icon Image is not bound on {name} (slotIndex={slotIndex}).");
-        if (label == null)
-            Debug.LogWarning($"[WallHandSlot] Label TMP_Text is not bound on {name} (slotIndex={slotIndex}).");
     }
 
     public void SetTile(WallTileType t, Sprite s)
@@ -82,16 +80,17 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
         hasTile = (t != WallTileType.None);
 
         if (label != null) label.text = "";
-        // sprite intentionally not touched here
     }
 
     public void ClearTile()
     {
         hasTile = false;
         tileType = WallTileType.None;
+        rotationSteps = 0;
 
         if (label != null) label.text = "";
         SetSprite(null);
+        ApplyIconRotation();
     }
 
     public void SetSprite(Sprite s)
@@ -104,6 +103,25 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
     public Sprite GetSprite()
     {
         return icon != null ? icon.sprite : null;
+    }
+
+    public void SetRotation(int rotSteps)
+    {
+        rotationSteps = Mod6(rotSteps);
+        ApplyIconRotation();
+    }
+
+    private void ApplyIconRotation()
+    {
+        if (icon == null) return;
+        icon.rectTransform.localEulerAngles = new Vector3(0f, 0f, -rotationSteps * 60f);
+    }
+
+    private static int Mod6(int v)
+    {
+        v %= 6;
+        if (v < 0) v += 6;
+        return v;
     }
 
     public void OnBeginDrag(PointerEventData eventData)
