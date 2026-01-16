@@ -54,6 +54,31 @@ public sealed class TilePlacement : MonoBehaviour
     [Tooltip("Visual-only offset in 60° steps, to align sprite base orientation.")]
     [SerializeField] private int spriteRotationOffsetSteps = 0;
 
+    // ---------------- Towers (Step 2) ----------------
+
+    [Header("Towers – Prefabs (assign your 3D cylinders here)")]
+    [SerializeField] private GameObject towerArcher3DPrefab;
+    [SerializeField] private GameObject towerArtillery3DPrefab;
+    [SerializeField] private GameObject towerMagic3DPrefab;
+    [SerializeField] private GameObject towerFlame3DPrefab;
+
+    [Header("Towers – Placement")]
+    [Tooltip("Tower diameter = outerRadius * this value. Per task = 0.5")]
+    [SerializeField] private float towerDiameterByOuterRadius = 0.5f;
+
+    [SerializeField] private float towerVisualYOffset = 0.02f;
+
+    [Tooltip("Tower layer. Default = Ignore Raycast (2) to not break drag & camera.")]
+    [SerializeField] private int towerLayer = 2;
+
+    [Header("Towers – Debug spawn on Start (temporary for Step 2 check)")]
+    [SerializeField] private bool debugSpawnTowerOnStart = false;
+    [SerializeField] private TowerType debugTowerType = TowerType.Archer;
+    [SerializeField] private int debugTowerQ = 0;
+    [SerializeField] private int debugTowerR = 0;
+
+    private Transform towerVisualsRoot;
+
     // Axial directions (pointy-top): 0..5
     // 0: E, 1: NE, 2: NW, 3: W, 4: SW, 5: SE
     private static readonly Vector2Int[] AxialDirs =
@@ -79,7 +104,14 @@ public sealed class TilePlacement : MonoBehaviour
     }
 
     private readonly Dictionary<Vector2Int, HexCellView> cells = new();
-    private readonly Dictionary<Vector2Int, PlacedTile> placed = new();
+private readonly Dictionary<Vector2Int, PlacedTile> placed = new();
+
+// Towers placed per cell
+private readonly Dictionary<Vector2Int, GameObject> placedTowers = new();
+
+// Step 2.3 – remembers last placed wall cell (for quick tower debug)
+private Vector2Int lastPlacedWallKey = new Vector2Int(int.MinValue, int.MinValue);
+
 
     private void OnValidate()
     {
@@ -90,6 +122,28 @@ public sealed class TilePlacement : MonoBehaviour
     {
         FixSpriteAssignmentsIfSwapped();
         RebuildCellCache();
+        EnsureTowerRoot();
+    }
+
+    private void Start()
+    {
+        if (debugSpawnTowerOnStart)
+        {
+            // For Step 2 verification: place a wall first, then enable this flag and press Play.
+            TryPlaceTower(debugTowerQ, debugTowerR, debugTowerType, true);
+        }
+    }
+
+
+
+    private void EnsureTowerRoot()
+    {
+        if (towerVisualsRoot != null) return;
+
+        var rootGo = GameObject.Find("_TowerVisualsRoot");
+        if (rootGo == null) rootGo = new GameObject("_TowerVisualsRoot");
+        towerVisualsRoot = rootGo.transform;
+        towerVisualsRoot.localScale = Vector3.one;
     }
 
     private void FixSpriteAssignmentsIfSwapped()
@@ -156,6 +210,10 @@ public sealed class TilePlacement : MonoBehaviour
         if (placed.TryGetValue(key, out var old))
         {
             if (!allowReplace) return false;
+
+            // If wall is being replaced – remove tower too (safe & consistent)
+            RemoveTowerAtInternal(key);
+
             DestroyVisual(old);
             placed.Remove(key);
         }
@@ -173,8 +231,10 @@ public sealed class TilePlacement : MonoBehaviour
         ApplyCellMaterial(key, true);
         SpawnOrUpdateVisual(key, tile);
 
-        Debug.Log($"[TilePlacement] Placed {type} rot={rotation} at q={q}, r={r}");
-        return true;
+        lastPlacedWallKey = key;
+
+Debug.Log($"[TilePlacement] Placed {type} rot={rotation} at q={q}, r={r}");
+return true;
     }
 
     private bool HasAnyConnection(Vector2Int key, int mask)
@@ -337,87 +397,82 @@ public sealed class TilePlacement : MonoBehaviour
     }
 
     private float ComputeWall3DInnerRadius(HexCellView cell)
-{
-    float innerR = wall3DManualInnerRadius;
+    {
+        float innerR = wall3DManualInnerRadius;
 
-    if (!autoFit3DWallToCell)
+        if (!autoFit3DWallToCell)
+            return Mathf.Max(0.05f, innerR);
+
+        // 1) Самый точный способ – из расстояния между центрами клеток
+        if (TryComputeInnerRadiusFromCellSpacing(cell, out float fromSpacing))
+        {
+            innerR = fromSpacing;
+        }
+        else
+        {
+            // 2) Фолбэк – как было (Grid Radius через reflection)
+            if (TryGetHexOuterRadiusFromSource(wall3DHexSource, out float R))
+            {
+                innerR = wall3DRadiusIsOuter ? R * COS30 : R;
+            }
+            else if (cell != null && cell.rend != null)
+            {
+                // 3) Последний фолбэк – bounds клетки
+                var ext = cell.rend.bounds.extents;
+                innerR = Mathf.Min(ext.x, ext.z);
+            }
+        }
+
+        float k = Mathf.Clamp(wall3DInnerRadiusPadding, 0.5f, 2.0f);
+        innerR *= k;
+
         return Mathf.Max(0.05f, innerR);
-
-    // 1) Самый точный способ – из расстояния между центрами клеток
-    if (TryComputeInnerRadiusFromCellSpacing(cell, out float fromSpacing))
-    {
-        innerR = fromSpacing;
     }
-    else
-    {
-        // 2) Фолбэк – как было (Grid Radius через reflection)
-        if (TryGetHexOuterRadiusFromSource(wall3DHexSource, out float R))
-        {
-            // Если у тебя в инспекторе wall3DRadiusIsOuter выставлен неправильно – это не страшно,
-            // т.к. основной путь now = fromSpacing.
-            innerR = wall3DRadiusIsOuter ? R * COS30 : R;
-        }
-        else if (cell != null && cell.rend != null)
-        {
-            // 3) Последний фолбэк – bounds клетки
-            var ext = cell.rend.bounds.extents;
-            innerR = Mathf.Min(ext.x, ext.z);
-        }
-    }
-
-    float k = Mathf.Clamp(wall3DInnerRadiusPadding, 0.5f, 2.0f);
-    innerR *= k;
-
-    return Mathf.Max(0.05f, innerR);
-}
-
-
 
     private bool TryGetHexOuterRadiusFromSource(GameObject go, out float outerR)
-{
-    outerR = -1f;
-    if (go == null) return false;
-
-    float radius = -1f;
-
-    var monos = go.GetComponents<MonoBehaviour>();
-    for (int i = 0; i < monos.Length; i++)
     {
-        var mb = monos[i];
-        if (mb == null) continue;
+        outerR = -1f;
+        if (go == null) return false;
 
-        var t = mb.GetType();
-        if (!t.Name.Contains("HexTileMesh")) continue;
+        float radius = -1f;
 
-        var f = t.GetField("Radius", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-             ?? t.GetField("radius", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
-        if (f != null && f.FieldType == typeof(float))
+        var monos = go.GetComponents<MonoBehaviour>();
+        for (int i = 0; i < monos.Length; i++)
         {
-            radius = (float)f.GetValue(mb);
-            break;
+            var mb = monos[i];
+            if (mb == null) continue;
+
+            var t = mb.GetType();
+            if (!t.Name.Contains("HexTileMesh")) continue;
+
+            var f = t.GetField("Radius", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                 ?? t.GetField("radius", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+            if (f != null && f.FieldType == typeof(float))
+            {
+                radius = (float)f.GetValue(mb);
+                break;
+            }
+
+            var p = t.GetProperty("Radius", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                 ?? t.GetProperty("radius", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+            if (p != null && p.PropertyType == typeof(float))
+            {
+                radius = (float)p.GetValue(mb);
+                break;
+            }
         }
 
-        var p = t.GetProperty("Radius", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-             ?? t.GetProperty("radius", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (radius <= 0f) return false;
 
-        if (p != null && p.PropertyType == typeof(float))
-        {
-            radius = (float)p.GetValue(mb);
-            break;
-        }
+        // Radius обычно хранится в ЛОКАЛЬНЫХ юнитах Grid – переводим в WORLD
+        var s = go.transform.lossyScale;
+        float scaleXZ = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.z));
+
+        outerR = radius * scaleXZ;
+        return outerR > 0f;
     }
-
-    if (radius <= 0f) return false;
-
-    // Radius обычно хранится в ЛОКАЛЬНЫХ юнитах Grid – переводим в WORLD
-    var s = go.transform.lossyScale;
-    float scaleXZ = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.z));
-
-    outerR = radius * scaleXZ;
-    return outerR > 0f;
-}
-
 
     private static void SetLayerRecursively(GameObject go, int layer)
     {
@@ -479,9 +534,115 @@ public sealed class TilePlacement : MonoBehaviour
         };
     }
 
+    // ---------------- Towers API (Step 2) ----------------
+
+    private bool IsWallTypeAllowedForTower(WallTileType t)
+    {
+        return t == WallTileType.Straight || t == WallTileType.SmallCurve || t == WallTileType.StrongCurve;
+    }
+
+    private GameObject GetTowerPrefab(TowerType type)
+    {
+        return type switch
+        {
+            TowerType.Archer => towerArcher3DPrefab,
+            TowerType.Artillery => towerArtillery3DPrefab,
+            TowerType.Magic => towerMagic3DPrefab,
+            TowerType.Flame => towerFlame3DPrefab,
+            _ => null
+        };
+    }
+
+    public bool TryPlaceTower(int q, int r, TowerType type, bool allowReplace)
+    {
+        var key = new Vector2Int(q, r);
+
+        if (cells.Count == 0)
+            RebuildCellCache();
+
+        if (!cells.TryGetValue(key, out var cell) || cell == null)
+            return false;
+
+        if (!placed.TryGetValue(key, out var wallTile) || wallTile == null)
+        {
+            Debug.Log($"[Tower] Denied: no wall at q={q} r={r}");
+            return false;
+        }
+
+        if (!IsWallTypeAllowedForTower(wallTile.type))
+        {
+            Debug.Log($"[Tower] Denied: wall type {wallTile.type} is not allowed for tower at q={q} r={r}");
+            return false;
+        }
+
+        var prefab = GetTowerPrefab(type);
+        if (prefab == null)
+        {
+            Debug.LogWarning($"[Tower] Prefab not assigned for {type}. Assign it in TilePlacement inspector.");
+            return false;
+        }
+
+        EnsureTowerRoot();
+
+        if (placedTowers.TryGetValue(key, out var oldTower) && oldTower != null)
+        {
+            if (!allowReplace) return false;
+            Destroy(oldTower);
+            placedTowers.Remove(key);
+        }
+
+        var tower = Instantiate(prefab, towerVisualsRoot);
+        tower.name = $"Tower_{type}_{q}_{r}";
+
+        // position
+        tower.transform.position = cell.transform.position + Vector3.up * towerVisualYOffset;
+        tower.transform.rotation = Quaternion.identity;
+
+        // scale by cell radius:
+        // innerR = apothem; outerR = innerR / cos(30)
+        float innerR = ComputeWall3DInnerRadius(cell);
+        float outerR = innerR / COS30;
+
+        float desiredDiameter = outerR * Mathf.Clamp(towerDiameterByOuterRadius, 0.05f, 1.5f);
+
+        // Unity Cylinder primitive diameter at scale 1 = 1.0 (radius 0.5), so XZ scale = desiredDiameter
+        var s = tower.transform.localScale;
+        tower.transform.localScale = new Vector3(desiredDiameter, s.y, desiredDiameter);
+
+        // do not break raycasts
+        SetLayerRecursively(tower, towerLayer);
+
+        // disable colliders (safe for now)
+        var cols = tower.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < cols.Length; i++)
+            cols[i].enabled = false;
+
+        placedTowers[key] = tower;
+
+        Debug.Log($"[Tower] Placed {type} at q={q} r={r} diameter={desiredDiameter:0.###} (outerR={outerR:0.###})");
+        return true;
+    }
+
+    private void RemoveTowerAtInternal(Vector2Int key)
+    {
+        if (!placedTowers.TryGetValue(key, out var tower) || tower == null)
+        {
+            placedTowers.Remove(key);
+            return;
+        }
+
+        Destroy(tower);
+        placedTowers.Remove(key);
+    }
+
+    // ---------------------------------------------------
+
     public bool RemoveWallAt(int q, int r)
     {
         var key = new Vector2Int(q, r);
+
+        // IMPORTANT: if wall is destroyed – remove tower too
+        RemoveTowerAtInternal(key);
 
         if (!placed.TryGetValue(key, out var tile))
             return false;
@@ -494,32 +655,46 @@ public sealed class TilePlacement : MonoBehaviour
 
         return true;
     }
+
     private bool TryComputeInnerRadiusFromCellSpacing(HexCellView cell, out float innerR)
-{
-    innerR = 0f;
-    if (cell == null) return false;
-
-    var p = cell.transform.position;
-    var p2 = new Vector2(p.x, p.z);
-
-    // innerRadius = (distance between centers of соседних клеток) / 2
-    for (int dir = 0; dir < 6; dir++)
     {
-        var nk = new Vector2Int(cell.q, cell.r) + AxialDirs[dir];
-        if (!cells.TryGetValue(nk, out var nCell) || nCell == null) continue;
+        innerR = 0f;
+        if (cell == null) return false;
 
-        var np = nCell.transform.position;
-        var np2 = new Vector2(np.x, np.z);
+        var p = cell.transform.position;
+        var p2 = new Vector2(p.x, p.z);
 
-        float d = Vector2.Distance(p2, np2);
-        if (d > 0.0001f)
+        // innerRadius = (distance between centers of соседних клеток) / 2
+        for (int dir = 0; dir < 6; dir++)
         {
-            innerR = d * 0.5f;
-            return true;
-        }
-    }
+            var nk = new Vector2Int(cell.q, cell.r) + AxialDirs[dir];
+            if (!cells.TryGetValue(nk, out var nCell) || nCell == null) continue;
 
-    return false;
+            var np = nCell.transform.position;
+            var np2 = new Vector2(np.x, np.z);
+
+            float d = Vector2.Distance(p2, np2);
+            if (d > 0.0001f)
+            {
+                innerR = d * 0.5f;
+                return true;
+            }
+        }
+
+        return false;
+    }
+    private void Update()
+{
+    if (Input.GetKeyDown(KeyCode.T))
+    {
+        if (lastPlacedWallKey.x == int.MinValue)
+        {
+            Debug.Log("[Tower] No last placed wall yet – place a wall first.");
+            return;
+        }
+
+        TryPlaceTower(lastPlacedWallKey.x, lastPlacedWallKey.y, debugTowerType, true);
+    }
 }
 
 }
