@@ -1,4 +1,3 @@
-// WallHandSlot.cs
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -14,17 +13,29 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
     public Image icon;
 
     private WallDragController drag;
-    private bool hasTile;
-    private WallTileType tileType = WallTileType.None;
 
-    // ЕДИНЫЙ источник rotation для этого слота (0..5)
+    [Header("Data")]
+    [SerializeField] private HandItemKind kind = HandItemKind.None;
+    [SerializeField] private WallTileType tileType = WallTileType.None;   // for Wall / Combo
+    [SerializeField] private TowerType towerType = TowerType.Archer;      // for Tower / Combo
+
+    // rotation for Wall / Combo (0..5)
     [SerializeField] private int rotationSteps;
 
-    public bool HasTile => hasTile;
+    // Compatibility
+    public bool HasTile => kind != HandItemKind.None;
     public WallTileType TileType => tileType;
-    public TMP_Text Label => label;
+
+    public bool HasItem => HasTile;
+    public WallTileType WallType => tileType;
+    public void ClearItem() => ClearTile();
+
+    // New
+    public HandItemKind Kind => kind;
+    public TowerType TowerType => towerType;
 
     public int GetRotation() => rotationSteps;
+    public Sprite GetSprite() => icon != null ? icon.sprite : null;
 
     private void Awake()
     {
@@ -41,21 +52,7 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
         {
             var ico = transform.Find("Icon");
             if (ico != null) icon = ico.GetComponent<Image>();
-            if (icon == null)
-            {
-                var imgs = GetComponentsInChildren<Image>(true);
-                if (imgs != null && imgs.Length > 0)
-                {
-                    foreach (var im in imgs)
-                        if (im != null && im.gameObject.name == "Icon") { icon = im; break; }
-
-                    if (icon == null)
-                    {
-                        foreach (var im in imgs)
-                            if (im != null && im.transform != transform) { icon = im; break; }
-                    }
-                }
-            }
+            if (icon == null) icon = GetComponentInChildren<Image>(true);
         }
 
         if (name.StartsWith("TileSlot"))
@@ -63,29 +60,68 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
             if (int.TryParse(name.Replace("TileSlot", ""), out int idx))
                 slotIndex = idx;
         }
+
+        ApplyIconRotation();
+    }
+
+    // --- Walls ---
+    public void SetTile(WallTileType t)
+    {
+        kind = (t == WallTileType.None) ? HandItemKind.None : HandItemKind.Wall;
+        tileType = t;
+        if (label != null) label.text = "";
+        ApplyIconRotation();
     }
 
     public void SetTile(WallTileType t, Sprite s)
     {
-        tileType = t;
-        hasTile = (t != WallTileType.None);
-
-        if (label != null) label.text = "";
+        SetTile(t);
         SetSprite(s);
     }
 
-    public void SetTile(WallTileType t)
+    public void SetWall(WallTileType t, int rotSteps, Sprite s)
     {
-        tileType = t;
-        hasTile = (t != WallTileType.None);
+        SetTile(t, s);
+        SetRotation(rotSteps);
+    }
+
+    public void SetRotation(int rotSteps)
+    {
+        rotationSteps = Mod6(rotSteps);
+        ApplyIconRotation();
+    }
+
+    // --- Towers ---
+    public void SetTower(TowerType t, Sprite s)
+    {
+        kind = HandItemKind.Tower;
+        towerType = t;
+        tileType = WallTileType.None;
+        rotationSteps = 0;
 
         if (label != null) label.text = "";
+        SetSprite(s);
+        ApplyIconRotation();
+    }
+
+    // --- Combo (Wall + Tower) ---
+    public void SetCombo(WallTileType wall, TowerType tower, int rotSteps, Sprite s)
+    {
+        kind = HandItemKind.Combo;
+        tileType = wall;
+        towerType = tower;
+        rotationSteps = Mod6(rotSteps);
+
+        if (label != null) label.text = "";
+        SetSprite(s);
+        ApplyIconRotation();
     }
 
     public void ClearTile()
     {
-        hasTile = false;
+        kind = HandItemKind.None;
         tileType = WallTileType.None;
+        towerType = TowerType.Archer;
         rotationSteps = 0;
 
         if (label != null) label.text = "";
@@ -98,17 +134,6 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
         if (icon == null) return;
         icon.sprite = s;
         icon.enabled = (s != null);
-    }
-
-    public Sprite GetSprite()
-    {
-        return icon != null ? icon.sprite : null;
-    }
-
-    public void SetRotation(int rotSteps)
-    {
-        rotationSteps = Mod6(rotSteps);
-        ApplyIconRotation();
     }
 
     private void ApplyIconRotation()
@@ -126,7 +151,7 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
 
     public void OnBeginDrag(PointerEventData eventData)
     {
-        if (!hasTile) return;
+        if (!HasTile) return;
         if (drag == null) drag = FindFirstObjectByType<WallDragController>();
         if (drag == null) return;
 

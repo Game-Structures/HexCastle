@@ -1,4 +1,3 @@
-// WallDragController.cs
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -7,6 +6,7 @@ public sealed class WallDragController : MonoBehaviour
 {
     [Header("Scene refs")]
     [SerializeField] private TilePlacement placement;
+    [SerializeField] private WallHandManager handManager;
     [SerializeField] private Canvas hudCanvas;
 
     [Header("Floating Controls (triangle)")]
@@ -26,12 +26,13 @@ public sealed class WallDragController : MonoBehaviour
     [SerializeField] private bool autoFitGhostToCell = true;
     [SerializeField] private float ghostFitPadding = 1.00f;
 
-    [Header("Debug")]
-    [SerializeField] private bool debugLogs = true;
-
     private WallHandSlot activeSlot;
-    private WallTileType activeType;
-    private int rotation; // 0..5
+
+    private HandItemKind activeKind;
+    private WallTileType activeWallType;
+    private TowerType activeTowerType;
+
+    private int rotation; // for Wall / Combo
 
     private bool dragging;
     private bool holding;
@@ -72,6 +73,7 @@ public sealed class WallDragController : MonoBehaviour
     private void AutoAssignRefs()
     {
         if (placement == null) placement = FindFirstObjectByType<TilePlacement>();
+        if (handManager == null) handManager = FindFirstObjectByType<WallHandManager>();
         if (hudCanvas == null) hudCanvas = FindFirstObjectByType<Canvas>();
 
         if (floatingControlsRoot != null)
@@ -114,18 +116,18 @@ public sealed class WallDragController : MonoBehaviour
         }
     }
 
-    public void BeginDrag(WallHandSlot slot) => BeginDrag(slot, null);
-
     public void BeginDrag(WallHandSlot slot, PointerEventData eventData)
     {
         if (slot == null) return;
         if (!slot.HasTile) return;
 
         activeSlot = slot;
-        activeType = slot.TileType;
+        activeKind = slot.Kind;
 
-        // ВАЖНО: берём rotation из слота (единая система)
-        rotation = slot.GetRotation();
+        activeWallType = slot.TileType;
+        activeTowerType = slot.TowerType;
+
+        rotation = (activeKind == HandItemKind.Tower) ? 0 : slot.GetRotation();
 
         hoverCell = null;
         holding = false;
@@ -139,7 +141,7 @@ public sealed class WallDragController : MonoBehaviour
         UpdateHoverCell(lastScreenPos);
         UpdateGhost(lastScreenPos);
 
-        if (debugLogs) Debug.Log($"[WallDrag] BeginDrag slot={slot.slotIndex} type={activeType} rot={rotation}");
+        SetRotateVisible(activeKind == HandItemKind.Wall || activeKind == HandItemKind.Combo);
     }
 
     public void Drag(PointerEventData eventData)
@@ -152,19 +154,9 @@ public sealed class WallDragController : MonoBehaviour
         UpdateGhost(lastScreenPos);
     }
 
-    public void Drag(Vector2 screenPos)
-    {
-        if (!dragging) return;
-
-        lastScreenPos = screenPos;
-        UpdateHoverCell(lastScreenPos);
-        UpdateGhost(lastScreenPos);
-    }
-
     public void EndDrag(PointerEventData eventData)
     {
         if (!dragging) return;
-
         if (eventData != null) lastScreenPos = eventData.position;
 
         dragging = false;
@@ -173,7 +165,6 @@ public sealed class WallDragController : MonoBehaviour
 
         if (hoverCell == null)
         {
-            if (debugLogs) Debug.Log("[WallDrag] EndDrag -> no hover cell, cancel");
             CancelPlace();
             return;
         }
@@ -182,25 +173,14 @@ public sealed class WallDragController : MonoBehaviour
 
         UpdateGhost(lastScreenPos);
         ShowControlsAtCell(hoverCell);
-
-        if (debugLogs) Debug.Log($"[WallDrag] EndDrag over cell q={hoverCell.q} r={hoverCell.r}");
     }
 
-    public void UiConfirm()
-    {
-        Debug.Log("[WallDrag] OK clicked");
-        ConfirmPlace();
-    }
-
-    public void UiCancel()
-    {
-        Debug.Log("[WallDrag] X clicked");
-        CancelPlace();
-    }
+    public void UiConfirm() => ConfirmPlace();
+    public void UiCancel() => CancelPlace();
 
     public void UiRotate()
     {
-        Debug.Log("[WallDrag] ROT clicked");
+        if (activeKind != HandItemKind.Wall && activeKind != HandItemKind.Combo) return;
 
         rotation = (rotation + 1) % 6;
         UpdateGhost(lastScreenPos);
@@ -213,7 +193,6 @@ public sealed class WallDragController : MonoBehaviour
     {
         if (placement == null)
         {
-            Debug.LogWarning("[WallDrag] TilePlacement is NULL");
             CancelPlace();
             return;
         }
@@ -223,32 +202,51 @@ public sealed class WallDragController : MonoBehaviour
 
         if (hoverCell == null)
         {
-            Debug.Log("[WallDrag] Confirm -> hoverCell still null, cancel");
             CancelPlace();
             return;
         }
 
-        bool ok = placement.TryPlaceWall(
-            hoverCell.q,
-            hoverCell.r,
-            hoverCell.transform.position,
-            activeType,
-            rotation,
-            true
-        );
+        bool ok = false;
 
-        Debug.Log($"[WallDrag] TryPlaceWall result={ok} q={hoverCell.q} r={hoverCell.r} type={activeType} rot={rotation}");
+        if (activeKind == HandItemKind.Tower)
+        {
+            ok = placement.TryPlaceTower(hoverCell.q, hoverCell.r, activeTowerType, true);
+        }
+        else if (activeKind == HandItemKind.Wall)
+        {
+            ok = placement.TryPlaceWall(
+                hoverCell.q, hoverCell.r, hoverCell.transform.position,
+                activeWallType, rotation, true
+            );
+        }
+        else if (activeKind == HandItemKind.Combo)
+        {
+            bool okWall = placement.TryPlaceWall(
+                hoverCell.q, hoverCell.r, hoverCell.transform.position,
+                activeWallType, rotation, true
+            );
+
+            if (okWall)
+            {
+                bool okTower = placement.TryPlaceTower(hoverCell.q, hoverCell.r, activeTowerType, true);
+                ok = okWall && okTower;
+
+                // Если башня вдруг не поставилась – оставляем стену (без отката), чтобы не потерять возможную замену стены
+                // ok может быть false – тогда слот НЕ расходуем
+                if (!okTower) ok = false;
+            }
+        }
 
         if (ok && activeSlot != null)
-            activeSlot.ClearTile();
+        {
+            if (handManager != null) handManager.ConsumeSlot(activeSlot.slotIndex);
+            else activeSlot.ClearTile();
+        }
 
         FinishInteraction();
     }
 
-    private void CancelPlace()
-    {
-        FinishInteraction();
-    }
+    private void CancelPlace() => FinishInteraction();
 
     private void FinishInteraction()
     {
@@ -257,8 +255,12 @@ public sealed class WallDragController : MonoBehaviour
         holding = false;
         dragging = false;
 
+        activeKind = HandItemKind.None;
+
         HideControls();
         DestroyGhost();
+
+        SetRotateVisible(true);
     }
 
     private void UpdateHoverCell(Vector2 screenPos)
@@ -296,6 +298,12 @@ public sealed class WallDragController : MonoBehaviour
         floatingControlsRoot.anchoredPosition = anchored + controlsOffset;
     }
 
+    private void SetRotateVisible(bool visible)
+    {
+        if (rotateButton != null)
+            rotateButton.gameObject.SetActive(visible);
+    }
+
     private void CreateGhostFromSlot(WallHandSlot slot)
     {
         if (hudCanvas == null) return;
@@ -320,8 +328,7 @@ public sealed class WallDragController : MonoBehaviour
         ghostRect.sizeDelta = ghostSize;
         ghostCg.alpha = ghostAlpha;
 
-        Sprite spr = null;
-        if (slot != null && slot.icon != null) spr = slot.icon.sprite;
+        Sprite spr = slot != null ? slot.GetSprite() : null;
 
         ghostImg.sprite = spr;
         ghostImg.enabled = (spr != null);
@@ -350,9 +357,9 @@ public sealed class WallDragController : MonoBehaviour
 
         ghostRect.localEulerAngles = new Vector3(0f, 0f, -rotation * 60f);
 
-        if (activeSlot != null && activeSlot.icon != null && ghostImg != null)
+        if (activeSlot != null && ghostImg != null)
         {
-            var spr = activeSlot.icon.sprite;
+            var spr = activeSlot.GetSprite();
             ghostImg.sprite = spr;
             ghostImg.enabled = (spr != null);
             ghostImg.preserveAspect = true;

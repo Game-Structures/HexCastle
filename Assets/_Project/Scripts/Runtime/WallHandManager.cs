@@ -1,4 +1,3 @@
-// WallHandManager.cs
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -12,26 +11,57 @@ public sealed class WallHandManager : MonoBehaviour
     [SerializeField] private int refreshCost = 20;
 
     [Header("Slots (optional)")]
-    [Tooltip("Можно не назначать – будет найдено в сцене по WallHandSlot.")]
+    [Tooltip("Можно не назначать – будет найдено в сцене по TileSlot0/1/2.")]
     [SerializeField] private WallHandSlot[] slots;
 
-    [Header("Sprites")]
+    [Header("Walls – Sprites")]
     [SerializeField] private Sprite spriteStraight;
     [SerializeField] private Sprite spriteSmallCurve;
     [SerializeField] private Sprite spriteStrongCurve;
     [SerializeField] private Sprite spriteSplit;
 
+    [Header("Towers – Sprites")]
+    [SerializeField] private Sprite spriteTowerArcher;
+    [SerializeField] private Sprite spriteTowerMagic;
+    [SerializeField] private Sprite spriteTowerArtillery;
+    [SerializeField] private Sprite spriteTowerFlame;
+
+    [Header("Combo – Sprites (12 pcs)")]
+    [SerializeField] private Sprite comboStraightArcher;
+    [SerializeField] private Sprite comboStraightMagic;
+    [SerializeField] private Sprite comboStraightArtillery;
+    [SerializeField] private Sprite comboStraightFlame;
+
+    [SerializeField] private Sprite comboSmallCurveArcher;
+    [SerializeField] private Sprite comboSmallCurveMagic;
+    [SerializeField] private Sprite comboSmallCurveArtillery;
+    [SerializeField] private Sprite comboSmallCurveFlame;
+
+    [SerializeField] private Sprite comboStrongCurveArcher;
+    [SerializeField] private Sprite comboStrongCurveMagic;
+    [SerializeField] private Sprite comboStrongCurveArtillery;
+    [SerializeField] private Sprite comboStrongCurveFlame;
+
+    [Header("Mixing")]
+    [Range(0f, 1f)]
+    [SerializeField] private float towerChance = 0.25f;
+
+    [Range(0f, 1f)]
+    [SerializeField] private float comboChance = 0.20f;
+
     [SerializeField] private WaveController wave;
 
-    // ВАЖНО: храним ДВА списка: типы и повороты (0..5) для каждого слота
+    // For HUDController compatibility
     private readonly List<WallTileType> hand = new();
-    private readonly List<int> handRot = new(); // 0..5
+    private readonly List<int> handRot = new();
 
     public IReadOnlyList<WallTileType> Hand => hand;
-
-    // оставляем как было (для HUD)
     public int SelectedIndex { get; private set; } = 0;
     public int Rotation { get; private set; } = 0;
+
+    // New
+    private readonly List<HandItemKind> handKind = new();
+    private readonly List<TowerType> handTower = new();
 
     private bool refreshButtonBound;
 
@@ -47,24 +77,22 @@ public sealed class WallHandManager : MonoBehaviour
     {
         if (slots != null && slots.Length > 0) return;
 
-        slots = FindObjectsByType<WallHandSlot>(FindObjectsSortMode.None);
+        var found = FindObjectsByType<WallHandSlot>(FindObjectsSortMode.None);
+        var list = new List<WallHandSlot>();
 
-        if (slots != null)
+        foreach (var s in found)
         {
-            foreach (var s in slots)
-            {
-                if (s == null) continue;
-                if (s.name.StartsWith("TileSlot"))
-                {
-                    if (int.TryParse(s.name.Replace("TileSlot", ""), out int idx))
-                        s.slotIndex = idx;
-                }
-            }
+            if (s == null) continue;
+            if (!s.name.StartsWith("TileSlot")) continue;
 
-            System.Array.Sort(slots, (a, b) => a.slotIndex.CompareTo(b.slotIndex));
+            if (int.TryParse(s.name.Replace("TileSlot", ""), out int idx))
+                s.slotIndex = idx;
+
+            list.Add(s);
         }
 
-        Debug.Log($"[WallHandManager] Slots bound: {(slots == null ? 0 : slots.Length)}");
+        list.Sort((a, b) => a.slotIndex.CompareTo(b.slotIndex));
+        slots = list.ToArray();
     }
 
     private void AutoBindRefreshButton()
@@ -81,13 +109,11 @@ public sealed class WallHandManager : MonoBehaviour
         if (btn.onClick.GetPersistentEventCount() > 0)
         {
             refreshButtonBound = true;
-            Debug.Log("[WallHandManager] RefreshButton already has persistent OnClick binding – skipping auto-bind.");
             return;
         }
 
         btn.onClick.AddListener(RefreshHand);
         refreshButtonBound = true;
-        Debug.Log("[WallHandManager] RefreshButton auto-bound to RefreshHand().");
     }
 
     private void EnsureHandSize()
@@ -99,6 +125,12 @@ public sealed class WallHandManager : MonoBehaviour
 
         while (handRot.Count < handSize) handRot.Add(0);
         while (handRot.Count > handSize) handRot.RemoveAt(handRot.Count - 1);
+
+        while (handKind.Count < handSize) handKind.Add(HandItemKind.None);
+        while (handKind.Count > handSize) handKind.RemoveAt(handKind.Count - 1);
+
+        while (handTower.Count < handSize) handTower.Add(TowerType.Archer);
+        while (handTower.Count > handSize) handTower.RemoveAt(handTower.Count - 1);
     }
 
     public int GetHandRotation(int index)
@@ -107,81 +139,89 @@ public sealed class WallHandManager : MonoBehaviour
         return Mod6(handRot[index]);
     }
 
+    public HandItemKind GetKind(int index)
+    {
+        if (index < 0 || index >= handKind.Count) return HandItemKind.None;
+        return handKind[index];
+    }
+
+    public TowerType GetTowerType(int index)
+    {
+        if (index < 0 || index >= handTower.Count) return TowerType.Archer;
+        return handTower[index];
+    }
+
     public void NewRoundHand()
     {
         AutoBindSlotsSceneWide();
         EnsureHandSize();
 
+        float c = Mathf.Clamp01(comboChance);
+        float t = Mathf.Clamp01(towerChance);
+        if (c + t > 0.95f) t = 0.95f - c;
+
         for (int i = 0; i < handSize; i++)
         {
-            hand[i] = RandomType();
-            handRot[i] = Random.Range(0, 6); // 0..5
+            float roll = Random.value;
+
+            if (roll < c)
+            {
+                // Combo: only Straight/SmallCurve/StrongCurve
+                handKind[i] = HandItemKind.Combo;
+                hand[i] = RandomWallTypeForCombo();
+                handTower[i] = RandomTowerType();
+                handRot[i] = Random.Range(0, 6);
+            }
+            else if (roll < c + t)
+            {
+                // Tower
+                handKind[i] = HandItemKind.Tower;
+                hand[i] = WallTileType.None;
+                handTower[i] = RandomTowerType();
+                handRot[i] = 0;
+            }
+            else
+            {
+                // Wall
+                handKind[i] = HandItemKind.Wall;
+                hand[i] = RandomWallType();
+                handTower[i] = TowerType.Archer;
+                handRot[i] = Random.Range(0, 6);
+            }
         }
 
         SelectedIndex = 0;
         Rotation = 0;
 
         UpdateUI();
-        LogHandToConsole();
-
-        Debug.Log("[WallHandManager] NewRoundHand dealt.");
     }
 
     public void RefreshHand()
     {
         if (wave != null && wave.CurrentPhase != WaveController.Phase.Build)
-        {
-            Debug.Log("[WallHandManager] Refresh blocked: COMBAT phase");
             return;
-        }
-
-        Debug.Log("[WallHandManager] RefreshHand clicked.");
 
         if (!GoldBank.TrySpend(refreshCost))
-        {
-            Debug.Log($"[WallHandManager] Refresh denied. Need={refreshCost}, have={GoldBank.Gold}");
             return;
-        }
 
         NewRoundHand();
-        Debug.Log($"[WallHandManager] Refresh OK (-{refreshCost}). Gold left={GoldBank.Gold}");
-    }
-
-    public void SetSelected(int index)
-    {
-        if (index < 0 || index >= handSize) return;
-        SelectedIndex = index;
-        Rotation = 0;
-    }
-
-    public void RotateSelected()
-    {
-        Rotation = (Rotation + 1) % 6;
-    }
-
-    public bool TryGetSlotType(int index, out WallTileType type)
-    {
-        type = WallTileType.None;
-        if (index < 0 || index >= hand.Count) return false;
-        type = hand[index];
-        return type != WallTileType.None;
     }
 
     public void ConsumeSlot(int index)
     {
-        if (index < 0 || index >= hand.Count) return;
+        if (index < 0 || index >= handSize) return;
+
+        handKind[index] = HandItemKind.None;
         hand[index] = WallTileType.None;
         handRot[index] = 0;
+        handTower[index] = TowerType.Archer;
+
         UpdateUI();
     }
 
     private void UpdateUI()
     {
-        if (slots == null || slots.Length == 0)
-        {
-            Debug.LogWarning("[WallHandManager] UpdateUI skipped: no slots bound.");
-            return;
-        }
+        if (slots == null || slots.Length == 0) return;
 
         EnsureHandSize();
 
@@ -190,51 +230,45 @@ public sealed class WallHandManager : MonoBehaviour
             if (slot == null) continue;
 
             int idx = slot.slotIndex;
-            WallTileType t = (idx >= 0 && idx < hand.Count) ? hand[idx] : WallTileType.None;
-            int rot = (idx >= 0 && idx < handRot.Count) ? Mod6(handRot[idx]) : 0;
-
-            if (t == WallTileType.None)
+            if (idx < 0 || idx >= handSize)
             {
                 slot.ClearTile();
                 continue;
             }
 
-            slot.SetTile(t);
-            slot.SetSprite(GetSprite(t));
+            var k = handKind[idx];
+            if (k == HandItemKind.None)
+            {
+                slot.ClearTile();
+                continue;
+            }
 
-            // ВАЖНО: всегда выставляем rotation из handRot (единый источник)
-            slot.SetRotation(rot);
+            if (k == HandItemKind.Wall)
+            {
+                var wt = hand[idx];
+                int rot = Mod6(handRot[idx]);
+
+                slot.SetTile(wt);
+                slot.SetSprite(GetWallSprite(wt));
+                slot.SetRotation(rot);
+            }
+            else if (k == HandItemKind.Tower)
+            {
+                var tt = handTower[idx];
+                slot.SetTower(tt, GetTowerSprite(tt));
+            }
+            else // Combo
+            {
+                var wt = hand[idx];
+                var tt = handTower[idx];
+                int rot = Mod6(handRot[idx]);
+
+                slot.SetCombo(wt, tt, rot, GetComboSprite(wt, tt));
+            }
         }
     }
 
-    private void LogHandToConsole()
-    {
-        for (int i = 0; i < handSize; i++)
-        {
-            var t = hand[i];
-            int rot = Mod6(handRot[i]);
-
-            int baseMask = BaseMask(t);
-            int mask = RotateMask(baseMask, rot);
-            string dirs = MaskToLetters(mask);
-
-            Debug.Log($"Tile {i + 1}: {t} Direction: {dirs} Rotation: {rot}");
-        }
-    }
-
-    private WallTileType RandomType()
-    {
-        int v = Random.Range(0, 4);
-        return v switch
-        {
-            0 => WallTileType.Straight,
-            1 => WallTileType.SmallCurve,
-            2 => WallTileType.StrongCurve,
-            _ => WallTileType.Split
-        };
-    }
-
-    public Sprite GetSprite(WallTileType type)
+    private Sprite GetWallSprite(WallTileType type)
     {
         return type switch
         {
@@ -246,29 +280,77 @@ public sealed class WallHandManager : MonoBehaviour
         };
     }
 
-    // --- helpers (как модель TilePlacement) ---
-
-    private static int BaseMask(WallTileType type)
+    private Sprite GetTowerSprite(TowerType t)
     {
-        // как в TilePlacement.GetBaseMask() :contentReference[oaicite:2]{index=2}
-        return type switch
+        return t switch
         {
-            WallTileType.Straight    => (1 << 4) | (1 << 1),             // D–A
-            WallTileType.SmallCurve  => (1 << 4) | (1 << 5),             // D–C
-            WallTileType.StrongCurve => (1 << 4) | (1 << 0),             // D–B
-            WallTileType.Split       => (1 << 4) | (1 << 0) | (1 << 2),  // D–B–F
-            _ => 0
+            TowerType.Archer => spriteTowerArcher,
+            TowerType.Magic => spriteTowerMagic,
+            TowerType.Artillery => spriteTowerArtillery,
+            TowerType.Flame => spriteTowerFlame,
+            _ => spriteTowerArcher
         };
     }
 
-    private const int FullMask = (1 << 6) - 1;
-
-    private static int RotateMask(int baseMask, int rot)
+    private Sprite GetComboSprite(WallTileType w, TowerType t)
     {
-        rot = Mod6(rot);
-        int left = (baseMask << rot) & FullMask;
-        int right = (baseMask >> (6 - rot)) & FullMask;
-        return (left | right) & FullMask;
+        return w switch
+        {
+            WallTileType.Straight => t switch
+            {
+                TowerType.Archer => comboStraightArcher,
+                TowerType.Magic => comboStraightMagic,
+                TowerType.Artillery => comboStraightArtillery,
+                TowerType.Flame => comboStraightFlame,
+                _ => comboStraightArcher
+            },
+            WallTileType.SmallCurve => t switch
+            {
+                TowerType.Archer => comboSmallCurveArcher,
+                TowerType.Magic => comboSmallCurveMagic,
+                TowerType.Artillery => comboSmallCurveArtillery,
+                TowerType.Flame => comboSmallCurveFlame,
+                _ => comboSmallCurveArcher
+            },
+            WallTileType.StrongCurve => t switch
+            {
+                TowerType.Archer => comboStrongCurveArcher,
+                TowerType.Magic => comboStrongCurveMagic,
+                TowerType.Artillery => comboStrongCurveArtillery,
+                TowerType.Flame => comboStrongCurveFlame,
+                _ => comboStrongCurveArcher
+            },
+            _ => comboStraightArcher
+        };
+    }
+
+    private static WallTileType RandomWallType()
+    {
+        int v = Random.Range(0, 4);
+        return v switch
+        {
+            0 => WallTileType.Straight,
+            1 => WallTileType.SmallCurve,
+            2 => WallTileType.StrongCurve,
+            _ => WallTileType.Split
+        };
+    }
+
+    private static WallTileType RandomWallTypeForCombo()
+    {
+        int v = Random.Range(0, 3);
+        return v switch
+        {
+            0 => WallTileType.Straight,
+            1 => WallTileType.SmallCurve,
+            _ => WallTileType.StrongCurve
+        };
+    }
+
+    private static TowerType RandomTowerType()
+    {
+        int v = Random.Range(0, 4);
+        return (TowerType)v;
     }
 
     private static int Mod6(int v)
@@ -276,31 +358,5 @@ public sealed class WallHandManager : MonoBehaviour
         v %= 6;
         if (v < 0) v += 6;
         return v;
-    }
-
-    // A=NE(1), B=E(0), C=SE(5), D=SW(4), E=W(3), F=NW(2)
-    private static string MaskToLetters(int mask)
-    {
-        var letters = new List<string>(3);
-
-        // порядок вывода A,B,C,D,E,F
-        int[] dirs = { 1, 0, 5, 4, 3, 2 };
-        foreach (int d in dirs)
-        {
-            if ((mask & (1 << d)) == 0) continue;
-            letters.Add(d switch
-            {
-                1 => "A",
-                0 => "B",
-                5 => "C",
-                4 => "D",
-                3 => "E",
-                2 => "F",
-                _ => "?"
-            });
-        }
-
-        if (letters.Count == 0) return "Unknown";
-        return string.Join(" - ", letters);
     }
 }
