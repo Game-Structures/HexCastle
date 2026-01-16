@@ -10,7 +10,7 @@ public sealed class WaveController : MonoBehaviour
 
     [Header("Economy")]
     [SerializeField] private int startGold = 0;
-    [SerializeField] private int[] waveRewards = new int[] { 20, 40, 60, 80 };
+    [SerializeField] private int[] waveRewards = new int[] { 20 };
 
     [Header("Wave (fallback if no WavePlan for this round)")]
     [SerializeField] private int waveNumber = 1;

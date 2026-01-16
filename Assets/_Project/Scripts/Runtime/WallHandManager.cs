@@ -44,10 +44,10 @@ public sealed class WallHandManager : MonoBehaviour
 
     [Header("Mixing")]
     [Range(0f, 1f)]
-    [SerializeField] private float towerChance = 0.25f;
+    [SerializeField] private float towerChance = 0.01f;
 
     [Range(0f, 1f)]
-    [SerializeField] private float comboChance = 0.20f;
+    [SerializeField] private float comboChance = 0.01f;
 
     [SerializeField] private WaveController wave;
 

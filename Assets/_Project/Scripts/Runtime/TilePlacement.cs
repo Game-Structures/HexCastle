@@ -619,8 +619,18 @@ return true;
 
         placedTowers[key] = tower;
 
-        Debug.Log($"[Tower] Placed {type} at q={q} r={r} diameter={desiredDiameter:0.###} (outerR={outerR:0.###})");
-        return true;
+// вычислим расстояние между центрами соседних клеток (world units) – это будет 1 "тайл"
+float spacing = 1f;
+if (TryComputeCellCenterSpacing(cell, out float spacingTmp))
+    spacing = spacingTmp;
+
+var shooter = tower.GetComponent<TowerShooter>();
+if (shooter == null) shooter = tower.AddComponent<TowerShooter>();
+shooter.Init(type, spacing);
+
+Debug.Log($"[Tower] Placed {type} at q={q} r={r} diameter={desiredDiameter:0.###} (outerR={outerR:0.###}) spacing={spacing:0.###}");
+return true;
+
     }
 
     private void RemoveTowerAtInternal(Vector2Int key)
@@ -684,7 +694,7 @@ return true;
         return false;
     }
     private void Update()
-{
+    {
     if (Input.GetKeyDown(KeyCode.T))
     {
         if (lastPlacedWallKey.x == int.MinValue)
@@ -695,6 +705,33 @@ return true;
 
         TryPlaceTower(lastPlacedWallKey.x, lastPlacedWallKey.y, debugTowerType, true);
     }
-}
+    }
+    private bool TryComputeCellCenterSpacing(HexCellView cell, out float spacing)
+    {
+    spacing = 0f;
+    if (cell == null) return false;
+
+    Vector3 p = cell.transform.position;
+    Vector2 p2 = new Vector2(p.x, p.z);
+
+    for (int dir = 0; dir < 6; dir++)
+    {
+        var nk = new Vector2Int(cell.q, cell.r) + AxialDirs[dir];
+        if (!cells.TryGetValue(nk, out var nCell) || nCell == null) continue;
+
+        Vector3 np = nCell.transform.position;
+        Vector2 np2 = new Vector2(np.x, np.z);
+
+        float d = Vector2.Distance(p2, np2);
+        if (d > 0.0001f)
+        {
+            spacing = d;
+            return true;
+        }
+    }
+
+    return false;
+    }
+
 
 }

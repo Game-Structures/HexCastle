@@ -7,7 +7,7 @@ public sealed class CastleShooter : MonoBehaviour
     [SerializeField] private float hexSize = 1f;
 
     [Header("Attack")]
-    [SerializeField] private int damage = 60;
+    [SerializeField] private int damage = 50;
     [SerializeField] private float attackInterval = 2f;
 
     [Header("Projectile")]
