@@ -1,11 +1,16 @@
 using System.Collections.Generic;
 using UnityEngine;
+using HexCastle.Map;
 
 public sealed class EnemyForestStealth : MonoBehaviour
 {
     public bool IsHidden { get; private set; }
 
-    [Tooltip("Выключать визуал врага, когда он в лесу.")]
+    [Header("Hide rules")]
+    public bool hideInForest = true;
+    public bool hideInFog = true;
+
+    [Tooltip("Выключать визуал врага, когда он скрыт.")]
     public bool hideRenderers = true;
 
     private Dictionary<Vector2Int, HexCellView> cellsByAxial;
@@ -44,12 +49,26 @@ public sealed class EnemyForestStealth : MonoBehaviour
             BuildCache();
 
         var cell = FindNearestCell(transform.position);
+
         bool hidden = false;
 
         if (cell != null)
         {
-            var tag = cell.GetComponent<HexCastle.Map.MapTerrainTag>();
-            hidden = (tag != null && tag.type == HexCastle.Map.MapTerrainType.Forest);
+            // 1) Forest
+            if (hideInForest)
+            {
+                var tag = cell.GetComponent<MapTerrainTag>();
+                if (tag != null && tag.type == MapTerrainType.Forest)
+                    hidden = true;
+            }
+
+            // 2) Fog (если клетка не раскрыта)
+            if (!hidden && hideInFog)
+            {
+                var fog = cell.GetComponent<MapTileFogLink>();
+                if (fog != null && !fog.Revealed)
+                    hidden = true;
+            }
         }
 
         IsHidden = hidden;
