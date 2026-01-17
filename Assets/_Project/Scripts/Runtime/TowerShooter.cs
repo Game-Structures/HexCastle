@@ -1,3 +1,4 @@
+// TowerShooter.cs
 using UnityEngine;
 
 public sealed class TowerShooter : MonoBehaviour
@@ -32,9 +33,8 @@ public sealed class TowerShooter : MonoBehaviour
     [Header("Debug")]
     [SerializeField] private bool debugLogs = false;
 
-[SerializeField] private Color magicBeamColor = new Color(1f, 0.2f, 0.7f, 1f); // pink
-[SerializeField] private Color flameBeamColor = new Color(1f, 0.5f, 0.0f, 1f); // orange
-
+    [SerializeField] private Color magicBeamColor = new Color(1f, 0.2f, 0.7f, 1f); // pink
+    [SerializeField] private Color flameBeamColor = new Color(1f, 0.5f, 0.0f, 1f); // orange
 
     private float timer;
     private WaveController waves;
@@ -94,37 +94,36 @@ public sealed class TowerShooter : MonoBehaviour
     }
 
     private void Awake()
-{
-    waves = FindFirstObjectByType<WaveController>();
-    timer = Random.Range(0f, 0.2f);
-
-    var t = transform.Find("Muzzle");
-    muzzle = (t != null) ? t : transform;
-
-    // beam renderer (for magic/flame)
-    beam = GetComponent<LineRenderer>();
-    if (beam == null)
-        beam = gameObject.AddComponent<LineRenderer>();
-
-    // Если вдруг AddComponent не сработал (крайне редко) – просто не упадем
-    if (beam != null)
     {
-        beam.enabled = false;
-        beam.positionCount = 2;
-        beam.useWorldSpace = true;
-        beam.numCapVertices = 6;
-        beam.numCornerVertices = 6;
+        waves = FindFirstObjectByType<WaveController>();
+        timer = Random.Range(0f, 0.2f);
 
-        // материал, который учитывает start/endColor
-        beam.material = new Material(Shader.Find("Sprites/Default"));
+        var t = transform.Find("Muzzle");
+        muzzle = (t != null) ? t : transform;
 
-        beam.startWidth = beamWidth;
-        beam.endWidth = beamWidth;
-        beam.startColor = magicBeamColor;
-        beam.endColor = magicBeamColor;
+        // beam renderer (for magic/flame)
+        beam = GetComponent<LineRenderer>();
+        if (beam == null)
+            beam = gameObject.AddComponent<LineRenderer>();
+
+        // Если вдруг AddComponent не сработал (крайне редко) – просто не упадем
+        if (beam != null)
+        {
+            beam.enabled = false;
+            beam.positionCount = 2;
+            beam.useWorldSpace = true;
+            beam.numCapVertices = 6;
+            beam.numCornerVertices = 6;
+
+            // материал, который учитывает start/endColor
+            beam.material = new Material(Shader.Find("Sprites/Default"));
+
+            beam.startWidth = beamWidth;
+            beam.endWidth = beamWidth;
+            beam.startColor = magicBeamColor;
+            beam.endColor = magicBeamColor;
+        }
     }
-}
-
 
     private void Update()
     {
@@ -140,24 +139,22 @@ public sealed class TowerShooter : MonoBehaviour
         timer = fireInterval;
 
         if (type == TowerType.Magic)
-{
-    // instant hit + beam
-    DrawBeamTo(target.transform.position, isFlame:false);
-    target.Damage(damage);
+        {
+            // instant hit + beam
+            DrawBeamTo(target.transform.position, isFlame: false);
+            target.Damage(damage);
 
-    if (debugLogs) Debug.Log($"[TowerShooter] MAGIC beam -> {target.name} dmg={damage}");
-    return;
-}
+            if (debugLogs) Debug.Log($"[TowerShooter] MAGIC beam -> {target.name} dmg={damage}");
+            return;
+        }
 
-if (type == TowerType.Flame)
-{
-    DrawBeamTo(target.transform.position, isFlame:true);
-    ApplyAOE(transform.position, (rangeTiles + rangeExtraTiles) * cellSpacing, damage);
-    if (debugLogs) Debug.Log($"[TowerShooter] FLAME AOE dmg={damage}");
-    return;
-}
-
-
+        if (type == TowerType.Flame)
+        {
+            DrawBeamTo(target.transform.position, isFlame: true);
+            ApplyAOE(transform.position, (rangeTiles + rangeExtraTiles) * cellSpacing, damage);
+            if (debugLogs) Debug.Log($"[TowerShooter] FLAME AOE dmg={damage}");
+            return;
+        }
 
         // Archer / Artillery / Flame use projectile visuals
         SpawnProjectile(target);
@@ -182,6 +179,11 @@ if (type == TowerType.Flame)
                 enemies.RemoveAt(i);
                 continue;
             }
+
+            // NEW: враг в лесу невидим – не выбираем цель
+            var stealth = e.GetComponent<EnemyForestStealth>();
+            if (stealth != null && stealth.IsHidden)
+                continue;
 
             float d = (e.transform.position - p).sqrMagnitude;
             if (d < bestDistSq)
@@ -275,71 +277,66 @@ if (type == TowerType.Flame)
     }
 
     private void DrawBeamTo(Vector3 targetPos, bool isFlame)
-{
-    if (beam == null) return;
-
-    Vector3 origin = muzzle != null ? muzzle.position : transform.position;
-    origin.y += projectileYOffset;
-
-    targetPos.y += projectileYOffset;
-
-    float w = isFlame ? (beamWidth * 4.0f) : beamWidth;
-    beam.startWidth = w;
-    beam.endWidth = w;
-
-    var c = isFlame ? flameBeamColor : magicBeamColor;
-
-var g = new Gradient();
-g.SetKeys(
-    new[]
     {
-        new GradientColorKey(c, 0f),
-        new GradientColorKey(c, 1f),
-    },
-    new[]
-    {
-        new GradientAlphaKey(1f, 0f),
-        new GradientAlphaKey(1f, 1f),
+        if (beam == null) return;
+
+        Vector3 origin = muzzle != null ? muzzle.position : transform.position;
+        origin.y += projectileYOffset;
+
+        targetPos.y += projectileYOffset;
+
+        float w = isFlame ? (beamWidth * 4.0f) : beamWidth;
+        beam.startWidth = w;
+        beam.endWidth = w;
+
+        var c = isFlame ? flameBeamColor : magicBeamColor;
+
+        var g = new Gradient();
+        g.SetKeys(
+            new[]
+            {
+                new GradientColorKey(c, 0f),
+                new GradientColorKey(c, 1f),
+            },
+            new[]
+            {
+                new GradientAlphaKey(1f, 0f),
+                new GradientAlphaKey(1f, 1f),
+            }
+        );
+        beam.colorGradient = g;
+
+        beam.enabled = true;
+        beam.SetPosition(0, origin);
+        beam.SetPosition(1, targetPos);
+
+        float dur = isFlame ? Mathf.Max(0.08f, beamDuration * 2.0f) : beamDuration;
+        CancelInvoke(nameof(HideBeam));
+        Invoke(nameof(HideBeam), dur);
     }
-);
-beam.colorGradient = g;
 
-
-    beam.enabled = true;
-    beam.SetPosition(0, origin);
-    beam.SetPosition(1, targetPos);
-
-    float dur = isFlame ? Mathf.Max(0.08f, beamDuration * 2.0f) : beamDuration;
-    CancelInvoke(nameof(HideBeam));
-    Invoke(nameof(HideBeam), dur);
-}
-
-
-
-private void HideBeam()
-{
-    if (beam != null) beam.enabled = false;
-}
-
-private void ApplyAOE(Vector3 center, float radiusWorld, int dmg)
-{
-    float r2 = radiusWorld * radiusWorld;
-    var enemies = EnemyHealth.Alive;
-
-    for (int i = enemies.Count - 1; i >= 0; i--)
+    private void HideBeam()
     {
-        var e = enemies[i];
-        if (e == null)
+        if (beam != null) beam.enabled = false;
+    }
+
+    private void ApplyAOE(Vector3 center, float radiusWorld, int dmg)
+    {
+        float r2 = radiusWorld * radiusWorld;
+        var enemies = EnemyHealth.Alive;
+
+        for (int i = enemies.Count - 1; i >= 0; i--)
         {
-            enemies.RemoveAt(i);
-            continue;
+            var e = enemies[i];
+            if (e == null)
+            {
+                enemies.RemoveAt(i);
+                continue;
+            }
+
+            float d2 = (e.transform.position - center).sqrMagnitude;
+            if (d2 <= r2)
+                e.Damage(dmg);
         }
-
-        float d2 = (e.transform.position - center).sqrMagnitude;
-        if (d2 <= r2)
-            e.Damage(dmg);
     }
-}
-
-
 }

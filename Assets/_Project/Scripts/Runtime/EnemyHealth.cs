@@ -35,15 +35,21 @@ public sealed class EnemyHealth : MonoBehaviour
     }
 
     public void Damage(int amount)
-    {
-        if (amount <= 0) return;
+{
+    if (amount <= 0) return;
 
-        hp -= amount;
-        Debug.Log($"Enemy HP: {hp}");
+    // NEW: в лесу враг неуязвим
+    var stealth = GetComponent<EnemyForestStealth>();
+    if (stealth != null && stealth.IsHidden)
+        return;
 
-        if (hp <= 0)
-            Die();
-    }
+    hp -= amount;
+    Debug.Log($"Enemy HP: {hp}");
+
+    if (hp <= 0)
+        Die();
+}
+
 
     private void Die()
     {

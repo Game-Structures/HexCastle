@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 880902283642454789}
   - component: {fileID: -4750640532277687023}
   - component: {fileID: 5091224330429137580}
+  - component: {fileID: 8475947733112723753}
   m_Layer: 0
   m_Name: EnemyPrefab_Slow
   m_TagString: Untagged
@@ -151,3 +152,15 @@ MonoBehaviour:
   stats: {fileID: 11400000, guid: 4d7c2148614002344b81523452e80882, type: 2}
   stopMovementWhileAttacking: 1
   releaseDelay: 0.15
+--- !u!114 &8475947733112723753
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5787235187179916555}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 635d83d65e1f23a459c9d3daf8c11b3d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

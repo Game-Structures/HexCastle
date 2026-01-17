@@ -1,3 +1,4 @@
+// CastleShooter.cs
 using UnityEngine;
 
 public sealed class CastleShooter : MonoBehaviour
@@ -98,6 +99,11 @@ public sealed class CastleShooter : MonoBehaviour
                 enemies.RemoveAt(i);
                 continue;
             }
+
+            // NEW: враг в лесу невидим – не выбираем цель
+            var stealth = e.GetComponent<EnemyForestStealth>();
+            if (stealth != null && stealth.IsHidden)
+                continue;
 
             float d = (e.transform.position - p).sqrMagnitude;
             if (d < bestDistSq)
