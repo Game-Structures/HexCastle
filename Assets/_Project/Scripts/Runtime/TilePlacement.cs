@@ -183,59 +183,81 @@ private Vector2Int lastPlacedWallKey = new Vector2Int(int.MinValue, int.MinValue
             RebuildCellCache();
         return placed.ContainsKey(new Vector2Int(q, r));
     }
+private bool IsCellBuildable(Vector2Int key)
+{
+    if (!cells.TryGetValue(key, out var cell) || cell == null)
+        return false;
+
+    // Если тега нет – считаем обычной клеткой (Normal)
+    var tag = cell.GetComponent<HexCastle.Map.MapTerrainTag>();
+    if (tag == null) return true;
+
+    return tag.type == HexCastle.Map.MapTerrainType.Normal;
+}
 
     public bool TryPlaceWall(int q, int r, Vector3 worldPos, WallTileType type, int rotation, bool allowReplace)
+{
+    rotation = Mod6(rotation);
+    var key = new Vector2Int(q, r);
+
+    if (cells.Count == 0)
+        RebuildCellCache();
+
+    if (!cells.ContainsKey(key))
+        return false;
+
+    // NEW: запрет строительства на воде/лесу/горах
+    if (!IsCellBuildable(key))
     {
-        rotation = Mod6(rotation);
-        var key = new Vector2Int(q, r);
-
-        if (cells.Count == 0)
-            RebuildCellCache();
-
-        if (!cells.ContainsKey(key))
-            return false;
-
-        int baseMask = GetBaseMask(type);
-        if (baseMask == 0)
-            return false;
-
-        int mask = RotateMask(baseMask, rotation);
-
-        if (!allowReplace && placed.ContainsKey(key))
-            return false;
-
-        if (!HasAnyConnection(key, mask))
-            return false;
-
-        if (placed.TryGetValue(key, out var old))
-        {
-            if (!allowReplace) return false;
-
-            // If wall is being replaced – remove tower too (safe & consistent)
-            RemoveTowerAtInternal(key);
-
-            DestroyVisual(old);
-            placed.Remove(key);
-        }
-
-        var tile = new PlacedTile
-        {
-            type = type,
-            rotation = rotation,
-            mask = mask,
-            visual = null
-        };
-
-        placed[key] = tile;
-
-        ApplyCellMaterial(key, true);
-        SpawnOrUpdateVisual(key, tile);
-
-        lastPlacedWallKey = key;
-
-Debug.Log($"[TilePlacement] Placed {type} rot={rotation} at q={q}, r={r}");
-return true;
+        var cell = cells[key];
+        var tag = cell != null ? cell.GetComponent<HexCastle.Map.MapTerrainTag>() : null;
+        if (tag != null)
+            Debug.Log($"[TilePlacement] Denied: terrain={tag.type} at q={q}, r={r}");
+        return false;
     }
+
+    int baseMask = GetBaseMask(type);
+    if (baseMask == 0)
+        return false;
+
+    int mask = RotateMask(baseMask, rotation);
+
+    if (!allowReplace && placed.ContainsKey(key))
+        return false;
+
+    if (!HasAnyConnection(key, mask))
+        return false;
+
+    if (placed.TryGetValue(key, out var old))
+    {
+        if (!allowReplace) return false;
+
+        // If wall is being replaced – remove tower too (safe & consistent)
+        RemoveTowerAtInternal(key);
+
+        DestroyVisual(old);
+        placed.Remove(key);
+    }
+
+    var tile = new PlacedTile
+    {
+        type = type,
+        rotation = rotation,
+        mask = mask,
+        visual = null
+    };
+
+    placed[key] = tile;
+
+    ApplyCellMaterial(key, true);
+    SpawnOrUpdateVisual(key, tile);
+
+    lastPlacedWallKey = key;
+
+    Debug.Log($"[TilePlacement] Placed {type} rot={rotation} at q={q}, r={r}");
+    return true;
+}
+
 
     private bool HasAnyConnection(Vector2Int key, int mask)
     {
