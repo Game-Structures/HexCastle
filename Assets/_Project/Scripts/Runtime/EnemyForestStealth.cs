@@ -5,12 +5,21 @@ public sealed class EnemyForestStealth : MonoBehaviour
 {
     public bool IsHidden { get; private set; }
 
+    [Tooltip("Выключать визуал врага, когда он в лесу.")]
+    public bool hideRenderers = true;
+
     private Dictionary<Vector2Int, HexCellView> cellsByAxial;
     private float timer;
+
+    private Renderer[] rends;
+    private bool lastHidden;
 
     private void Awake()
     {
         BuildCache();
+        rends = GetComponentsInChildren<Renderer>(true);
+        lastHidden = IsHidden;
+        ApplyVisual();
     }
 
     private void BuildCache()
@@ -35,14 +44,33 @@ public sealed class EnemyForestStealth : MonoBehaviour
             BuildCache();
 
         var cell = FindNearestCell(transform.position);
-        if (cell == null)
+        bool hidden = false;
+
+        if (cell != null)
         {
-            IsHidden = false;
-            return;
+            var tag = cell.GetComponent<HexCastle.Map.MapTerrainTag>();
+            hidden = (tag != null && tag.type == HexCastle.Map.MapTerrainType.Forest);
         }
 
-        var tag = cell.GetComponent<HexCastle.Map.MapTerrainTag>();
-        IsHidden = (tag != null && tag.type == HexCastle.Map.MapTerrainType.Forest);
+        IsHidden = hidden;
+
+        if (IsHidden != lastHidden)
+        {
+            lastHidden = IsHidden;
+            ApplyVisual();
+        }
+    }
+
+    private void ApplyVisual()
+    {
+        if (!hideRenderers || rends == null) return;
+
+        bool show = !IsHidden;
+        for (int i = 0; i < rends.Length; i++)
+        {
+            if (rends[i] != null)
+                rends[i].enabled = show;
+        }
     }
 
     private HexCellView FindNearestCell(Vector3 worldPos)
