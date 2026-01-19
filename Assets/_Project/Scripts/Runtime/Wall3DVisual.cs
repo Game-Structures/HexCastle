@@ -9,18 +9,9 @@ public sealed class Wall3DVisual : MonoBehaviour
     [Range(0.02f, 0.5f)] [SerializeField] private float thicknessK = 0.12f;
     [Range(0.05f, 1.0f)] [SerializeField] private float heightK = 0.35f;
 
-    [Header("Center hub")]
-    [SerializeField] private bool centerHub = true;
-
-    [Header("Crenellations")]
-    [SerializeField] private bool crenellations = true;
-    [Range(0.02f, 0.4f)] [SerializeField] private float crenelLenK = 0.10f;
-    [Range(0.02f, 0.4f)] [SerializeField] private float crenelGapK = 0.10f;
-    [Range(0.02f, 0.4f)] [SerializeField] private float crenelExtraHK = 0.12f;
-
-    [Header("Joints")]
-    [SerializeField] private bool joints = true;
-    [Range(0.05f, 0.5f)] [SerializeField] private float jointRadiusK = 0.18f;
+    [Header("Medieval segments (NEW)")]
+    [Tooltip("Assign WallSegment_Medieval prefab here. If null – fallback to old cube walls.")]
+    [SerializeField] private GameObject wallSegmentPrefab;
 
     // overrides (absolute values in world units) – used for castle ring only
     private bool _useAbsDims;
@@ -31,12 +22,12 @@ public sealed class Wall3DVisual : MonoBehaviour
 
     // dir order: 0..5, rotation 60° steps around Y.
     static Vector3 DirXZ(int d)
-{
-    float ang = Mathf.Deg2Rad * (60f * d);
+    {
+        float ang = Mathf.Deg2Rad * (60f * d);
 
-    // ВАЖНО: инвертируем Z, чтобы направления совпали с ориентацией гекс-сетки в проекте
-    return new Vector3(Mathf.Cos(ang), 0f, -    Mathf.Sin(ang));
-}
+        // ВАЖНО: инвертируем Z, чтобы направления совпали с ориентацией гекс-сетки в проекте
+        return new Vector3(Mathf.Cos(ang), 0f, -Mathf.Sin(ang));
+    }
 
     public void SetDimensions(float thicknessAbs, float heightAbs)
     {
@@ -103,6 +94,31 @@ public sealed class Wall3DVisual : MonoBehaviour
         return c;
     }
 
+    private void SpawnMedievalSegment(int d, float innerRadius, float thickness, float height)
+    {
+        if (wallSegmentPrefab == null) return;
+
+        var seg = Instantiate(wallSegmentPrefab, _root);
+        seg.name = $"Seg_{d}";
+        seg.transform.localPosition = Vector3.zero;
+
+        Vector3 dir = DirXZ(d);
+        // Сегмент построен вдоль +X (от 0 до L), значит разворачиваем так, чтобы +X смотрел в dir
+        seg.transform.localRotation = Quaternion.FromToRotation(Vector3.right, dir);
+        seg.transform.localScale = Vector3.one;
+
+        // Принудительно задаём размеры сегмента под текущий innerRadius
+        var mesh = seg.GetComponent<MedievalWallSegmentMesh>();
+        if (mesh != null)
+        {
+            mesh.autoLengthFromSceneTiles = false;
+            mesh.length = innerRadius;
+            mesh.thickness = thickness;
+            mesh.height = height;
+            mesh.Rebuild();
+        }
+    }
+
     /// <param name="connectedMask">6-bit: which directions have confirmed connections.</param>
     /// <param name="rotationSteps">0..5 visual rotation.</param>
     /// <param name="innerRadius">distance from hex center to edge midpoint in world units.</param>
@@ -119,15 +135,27 @@ public sealed class Wall3DVisual : MonoBehaviour
         thickness = Mathf.Max(0.01f, thickness);
         height = Mathf.Max(0.05f, height);
 
-        float hubSize = thickness * 1.4f;
-        float baseY = height * 0.5f;
-
         // ВАЖНО: крутим только внутренний root, а не внешний объект
         _root.localRotation = Quaternion.Euler(0f, rotationSteps * 60f, 0f);
 
+        // NEW: если задан префаб сегмента – строим стену из сегментов
+        if (wallSegmentPrefab != null)
+        {
+            for (int d = 0; d < 6; d++)
+            {
+                if ((connectedMask & (1 << d)) == 0) continue;
+                SpawnMedievalSegment(d, innerRadius, thickness, height);
+            }
+            return;
+        }
+
+        // ---- Fallback: старые кубики (на случай если prefab не назначен) ----
+        float hubSize = thickness * 1.4f;
+        float baseY = height * 0.5f;
+
         int connCount = CountBits(connectedMask);
 
-        if (centerHub && connCount >= 2)
+        if (connCount >= 2)
         {
             SpawnCube("Hub", _root,
                 new Vector3(0f, baseY, 0f),
@@ -135,14 +163,13 @@ public sealed class Wall3DVisual : MonoBehaviour
                 new Vector3(hubSize, height, hubSize));
         }
 
-        // Arms: от центра до ребра (armLen = innerRadius)
         for (int d = 0; d < 6; d++)
         {
             if ((connectedMask & (1 << d)) == 0) continue;
 
             Vector3 dir = DirXZ(d);
-            float armLen = innerRadius;                 // ДО КРАЯ тайла
-            Vector3 centerPos = dir * (armLen * 0.5f);  // центр куба на половине длины
+            float armLen = innerRadius;
+            Vector3 centerPos = dir * (armLen * 0.5f);
 
             Quaternion rot = Quaternion.LookRotation(dir, Vector3.up);
 
@@ -150,38 +177,6 @@ public sealed class Wall3DVisual : MonoBehaviour
                 centerPos + new Vector3(0f, baseY, 0f),
                 rot,
                 new Vector3(thickness, height, armLen));
-
-            if (joints)
-            {
-                float jr = Mathf.Max(0.03f, innerRadius * jointRadiusK);
-
-                SpawnCube($"Joint_{d}", _root,
-                    dir * innerRadius + new Vector3(0f, baseY, 0f),
-                    Quaternion.identity,
-                    new Vector3(jr, height, jr));
-            }
-
-            if (crenellations)
-            {
-                float crenelLen = innerRadius * crenelLenK;
-                float crenelGap = innerRadius * crenelGapK;
-                float extraH = innerRadius * crenelExtraHK;
-
-                float topY = height + extraH * 0.5f;
-
-                float start = hubSize * 0.5f;
-                float end = innerRadius - (joints ? innerRadius * jointRadiusK * 0.6f : thickness);
-                float step = crenelLen + crenelGap;
-
-                for (float t = start; t < end; t += step * 2f)
-                {
-                    Vector3 p = dir * t;
-                    SpawnCube($"Crenel_{d}_{t:0.00}", _root,
-                        p + new Vector3(0f, topY, 0f),
-                        rot,
-                        new Vector3(thickness, extraH, crenelLen));
-                }
-            }
         }
     }
 

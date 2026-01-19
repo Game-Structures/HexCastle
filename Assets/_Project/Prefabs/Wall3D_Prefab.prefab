@@ -49,13 +49,7 @@ MonoBehaviour:
   wallMaterial: {fileID: 2100000, guid: d60706199f641cd44b96f532cc5ae123, type: 2}
   thicknessK: 0.3
   heightK: 0.8
-  centerHub: 1
-  crenellations: 1
-  crenelLenK: 0.1
-  crenelGapK: 0.1
-  crenelExtraHK: 0.12
-  joints: 1
-  jointRadiusK: 0.18
+  wallSegmentPrefab: {fileID: 6903539639403627411, guid: f3f49bdf53cff80429d0f039de0bf6fe, type: 3}
 --- !u!1 &4139383852366003997
 GameObject:
   m_ObjectHideFlags: 0
