@@ -121,6 +121,9 @@ public sealed class WallDragController : MonoBehaviour
         if (slot == null) return;
         if (!slot.HasTile) return;
 
+        // NEW: пока размещаем – отключаем TowerSlot клики
+        TowerSlotBlocker.SetBlocked(true);
+
         activeSlot = slot;
         activeKind = slot.Kind;
 
@@ -230,9 +233,6 @@ public sealed class WallDragController : MonoBehaviour
             {
                 bool okTower = placement.TryPlaceTower(hoverCell.q, hoverCell.r, activeTowerType, true);
                 ok = okWall && okTower;
-
-                // Если башня вдруг не поставилась – оставляем стену (без отката), чтобы не потерять возможную замену стены
-                // ok может быть false – тогда слот НЕ расходуем
                 if (!okTower) ok = false;
             }
         }
@@ -261,6 +261,9 @@ public sealed class WallDragController : MonoBehaviour
         DestroyGhost();
 
         SetRotateVisible(true);
+
+        // NEW: размещение закончено – включаем TowerSlot обратно
+        TowerSlotBlocker.SetBlocked(false);
     }
 
     private void UpdateHoverCell(Vector2 screenPos)
@@ -268,28 +271,18 @@ public sealed class WallDragController : MonoBehaviour
         hoverCell = RaycastHexCell(screenPos);
     }
 
-    // ВАЖНО: RaycastAll – чтобы коллайдер TowerSlot не мешал выбирать клетку
     private HexCellView RaycastHexCell(Vector2 screenPos)
     {
         var cam = Cam;
         if (cam == null) return null;
 
         var ray = cam.ScreenPointToRay(screenPos);
-        var hits = Physics.RaycastAll(ray, 500f);
-        if (hits == null || hits.Length == 0) return null;
+        if (!Physics.Raycast(ray, out var hit, 500f)) return null;
 
-        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+        var col = hit.collider;
+        if (col == null) return null;
 
-        for (int i = 0; i < hits.Length; i++)
-        {
-            var col = hits[i].collider;
-            if (col == null) continue;
-
-            var cell = col.GetComponentInParent<HexCellView>();
-            if (cell != null) return cell;
-        }
-
-        return null;
+        return col.GetComponentInParent<HexCellView>();
     }
 
     private void HideControls()
@@ -362,11 +355,6 @@ public sealed class WallDragController : MonoBehaviour
 
         ghostRect.anchoredPosition = anchoredPos;
 
-        if (autoFitGhostToCell && hoverCell != null && hoverCell.rend != null && TryGetGhostSizeFromCell(hoverCell, out float px))
-            ghostRect.sizeDelta = new Vector2(px, px);
-        else
-            ghostRect.sizeDelta = ghostSize;
-
         ghostRect.localEulerAngles = new Vector3(0f, 0f, -rotation * 60f);
 
         if (activeSlot != null && ghostImg != null)
@@ -376,32 +364,6 @@ public sealed class WallDragController : MonoBehaviour
             ghostImg.enabled = (spr != null);
             ghostImg.preserveAspect = true;
         }
-    }
-
-    private bool TryGetGhostSizeFromCell(HexCellView cell, out float sizePx)
-    {
-        sizePx = 0f;
-
-        var cam = Cam;
-        if (cam == null || cell == null || cell.rend == null) return false;
-
-        var b = cell.rend.bounds;
-        var c = b.center;
-        var e = b.extents;
-
-        var l = cam.WorldToScreenPoint(c - new Vector3(e.x, 0f, 0f));
-        var r = cam.WorldToScreenPoint(c + new Vector3(e.x, 0f, 0f));
-        float w = Mathf.Abs(r.x - l.x);
-
-        var d = cam.WorldToScreenPoint(c - new Vector3(0f, 0f, e.z));
-        var u = cam.WorldToScreenPoint(c + new Vector3(0f, 0f, e.z));
-        float h = Mathf.Abs(u.y - d.y);
-
-        float s = Mathf.Min(w, h) * ghostFitPadding;
-        if (float.IsNaN(s) || float.IsInfinity(s) || s < 8f) return false;
-
-        sizePx = s;
-        return true;
     }
 
     private void DestroyGhost()

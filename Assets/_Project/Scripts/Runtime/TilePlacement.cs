@@ -337,6 +337,21 @@ public sealed class TilePlacement : MonoBehaviour
             var link = tile.visual.GetComponent<WallTileLink>();
             if (link == null) link = tile.visual.AddComponent<WallTileLink>();
             link.Init(this, key.x, key.y, wallMaxHP);
+            // --- NEW: setup TowerSlot (runtime link + suggested diameter like real towers) ---
+var slot = tile.visual.GetComponentInChildren<TowerSlot>(true);
+if (slot != null)
+{
+    bool enabledForWall = IsWallTypeAllowedForTower(tile.type);
+
+    // outerR = innerR / cos(30)
+    float outerR = innerR / COS30;
+    float suggestedDia = outerR * Mathf.Clamp(towerDiameterByOuterRadius, 0.05f, 1.5f);
+
+    slot.Setup(this, key.x, key.y, enabledForWall);
+    slot.SetSuggestedDiameter(suggestedDia);
+    slot.RefreshVisual();
+}
+
 
             // NEW: настроим TowerSlot и вернем ему Default layer, если он есть
             SetupTowerSlot(tile.visual, key, tile.type);
@@ -504,64 +519,72 @@ public sealed class TilePlacement : MonoBehaviour
     }
 
     public bool TryPlaceTower(int q, int r, TowerType type, bool allowReplace)
+{
+    var key = new Vector2Int(q, r);
+
+    if (cells.Count == 0) RebuildCellCache();
+
+    if (!cells.TryGetValue(key, out var cell) || cell == null)
+        return false;
+
+    if (!placed.TryGetValue(key, out var wallTile) || wallTile == null)
+        return false;
+
+    if (!IsWallTypeAllowedForTower(wallTile.type))
+        return false;
+
+    var prefab = GetTowerPrefab(type);
+    if (prefab == null)
+        return false;
+
+    EnsureTowerRoot();
+
+    if (placedTowers.TryGetValue(key, out var oldTower) && oldTower != null)
     {
-        var key = new Vector2Int(q, r);
-
-        if (cells.Count == 0) RebuildCellCache();
-
-        if (!cells.TryGetValue(key, out var cell) || cell == null)
-            return false;
-
-        if (!placed.TryGetValue(key, out var wallTile) || wallTile == null)
-            return false;
-
-        if (!IsWallTypeAllowedForTower(wallTile.type))
-            return false;
-
-        var prefab = GetTowerPrefab(type);
-        if (prefab == null)
-            return false;
-
-        EnsureTowerRoot();
-
-        if (placedTowers.TryGetValue(key, out var oldTower) && oldTower != null)
-        {
-            if (!allowReplace) return false;
-            Destroy(oldTower);
-            placedTowers.Remove(key);
-        }
-
-        var tower = Instantiate(prefab, towerVisualsRoot);
-        tower.name = $"Tower_{type}_{q}_{r}";
-
-        tower.transform.position = cell.transform.position + Vector3.up * towerVisualYOffset;
-        tower.transform.rotation = Quaternion.identity;
-
-        float innerR = ComputeWall3DInnerRadius(cell);
-        float outerR = innerR / COS30;
-
-        float desiredDiameter = outerR * Mathf.Clamp(towerDiameterByOuterRadius, 0.05f, 1.5f);
-
-        var s = tower.transform.localScale;
-        tower.transform.localScale = new Vector3(desiredDiameter, s.y, desiredDiameter);
-
-        SetLayerRecursively(tower, towerLayer);
-
-        var cols = tower.GetComponentsInChildren<Collider>(true);
-        for (int i = 0; i < cols.Length; i++)
-            cols[i].enabled = false;
-
-        placedTowers[key] = tower;
-
-        float spacing = 1f;
-        TryComputeCellCenterSpacing(cell, out spacing);
-
-        var shooter = tower.GetComponent<TowerShooter>();
-        if (shooter == null) shooter = tower.AddComponent<TowerShooter>();
-        shooter.Init(type, spacing);
-
-        return true;
+        if (!allowReplace) return false;
+        Destroy(oldTower);
+        placedTowers.Remove(key);
     }
+
+    var tower = Instantiate(prefab, towerVisualsRoot);
+    tower.name = $"Tower_{type}_{q}_{r}";
+
+    tower.transform.position = cell.transform.position + Vector3.up * towerVisualYOffset;
+    tower.transform.rotation = Quaternion.identity;
+
+    float innerR = ComputeWall3DInnerRadius(cell);
+    float outerR = innerR / COS30;
+
+    float desiredDiameter = outerR * Mathf.Clamp(towerDiameterByOuterRadius, 0.05f, 1.5f);
+
+    var s = tower.transform.localScale;
+    tower.transform.localScale = new Vector3(desiredDiameter, s.y, desiredDiameter);
+
+    SetLayerRecursively(tower, towerLayer);
+
+    var cols = tower.GetComponentsInChildren<Collider>(true);
+    for (int i = 0; i < cols.Length; i++)
+        cols[i].enabled = false;
+
+    placedTowers[key] = tower;
+
+    float spacing = 1f;
+    TryComputeCellCenterSpacing(cell, out spacing);
+
+    var shooter = tower.GetComponent<TowerShooter>();
+    if (shooter == null) shooter = tower.AddComponent<TowerShooter>();
+    shooter.Init(type, spacing);
+
+    // NEW: обновить SlotVisual (серую башню) на этой стене
+    if (wallTile.visual != null)
+    {
+        var slot = wallTile.visual.GetComponentInChildren<TowerSlot>(true);
+        if (slot != null) slot.RefreshVisual();
+    }
+
+    return true;
+}
+
 
     private void RemoveTowerAtInternal(Vector2Int key)
     {

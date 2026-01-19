@@ -9,6 +9,9 @@ public sealed class TowerSlot : MonoBehaviour
     [SerializeField] private int q;
     [SerializeField] private int r;
 
+    [Header("Slot Visual (root that will be scaled in XZ)")]
+    [SerializeField] private GameObject slotVisual;
+
     [Header("Rules")]
     [SerializeField] private bool isEnabledForThisWall = true;
 
@@ -16,6 +19,26 @@ public sealed class TowerSlot : MonoBehaviour
     [SerializeField] private int buildCost = 10;
 
     private TowerBuildPopup cachedPopup;
+
+    private float suggestedDiameter = -1f;
+
+    private Vector3 slotVisualBaseScale = Vector3.one;
+    private bool baseScaleCached;
+
+    private void Awake()
+    {
+        CacheBaseScale();
+        RefreshVisual();
+    }
+
+    private void CacheBaseScale()
+    {
+        if (baseScaleCached) return;
+        if (slotVisual == null) return;
+        slotVisualBaseScale = slotVisual.transform.localScale;
+        if (slotVisualBaseScale == Vector3.zero) slotVisualBaseScale = Vector3.one;
+        baseScaleCached = true;
+    }
 
     public void Setup(TilePlacement p, int cellQ, int cellR, bool enabledForWall)
     {
@@ -26,11 +49,49 @@ public sealed class TowerSlot : MonoBehaviour
 
         var col = GetComponent<Collider>();
         if (col != null) col.enabled = isEnabledForThisWall;
+
+        RefreshVisual();
+    }
+
+    public void SetSuggestedDiameter(float diameter)
+    {
+        suggestedDiameter = diameter;
+        ApplySlotVisualScale();
+    }
+
+    private void ApplySlotVisualScale()
+    {
+        if (slotVisual == null) return;
+        if (suggestedDiameter <= 0f) return;
+
+        CacheBaseScale();
+
+        // Наша “нормализованная башня” собрана под диаметр=1.
+        // Поэтому X/Z множитель = suggestedDiameter.
+        float k = suggestedDiameter;
+
+        slotVisual.transform.localScale = new Vector3(
+            slotVisualBaseScale.x * k,
+            slotVisualBaseScale.y,      // высоту не трогаем
+            slotVisualBaseScale.z * k
+        );
+    }
+
+    public void RefreshVisual()
+    {
+        if (slotVisual != null)
+        {
+            bool hasTower = placement != null && placement.HasTowerAt(q, r);
+            slotVisual.SetActive(isEnabledForThisWall && !hasTower);
+        }
+
+        ApplySlotVisualScale();
     }
 
     private void OnMouseUpAsButton()
     {
-        // Если клик по UI (кнопки rotate/confirm/cancel и т.п.) — не открываем меню
+        if (TowerSlotBlocker.IsBlocked) return;
+
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
             return;
 
@@ -60,6 +121,11 @@ public sealed class TowerSlot : MonoBehaviour
 
         bool ok = placement.TryPlaceTower(q, r, type, allowReplace: false);
         if (!ok)
+        {
             GoldBank.Add(buildCost);
+            return;
+        }
+
+        RefreshVisual();
     }
 }
