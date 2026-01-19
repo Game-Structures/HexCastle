@@ -268,14 +268,26 @@ public sealed class WallDragController : MonoBehaviour
         hoverCell = RaycastHexCell(screenPos);
     }
 
+    // ВАЖНО: RaycastAll – чтобы коллайдер TowerSlot не мешал выбирать клетку
     private HexCellView RaycastHexCell(Vector2 screenPos)
     {
         var cam = Cam;
         if (cam == null) return null;
 
         var ray = cam.ScreenPointToRay(screenPos);
-        if (Physics.Raycast(ray, out var hit, 500f))
-            return hit.collider.GetComponentInParent<HexCellView>();
+        var hits = Physics.RaycastAll(ray, 500f);
+        if (hits == null || hits.Length == 0) return null;
+
+        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            var col = hits[i].collider;
+            if (col == null) continue;
+
+            var cell = col.GetComponentInParent<HexCellView>();
+            if (cell != null) return cell;
+        }
 
         return null;
     }

@@ -13,7 +13,7 @@ namespace HexCastle.Map
         [Tooltip("Имя объекта замка в Hierarchy.")]
         public string castleObjectName = "Castle";
         [Tooltip("Не размещать террейн ближе этого расстояния (в клетках) к замку.")]
-        public int minDistanceFromCastle = 2;
+        public int minDistanceFromCastle = 3;
 
         [Header("Fill targets (percent of all cells)")]
         [Range(0, 60)] public int waterPercent = 8;
