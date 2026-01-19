@@ -158,4 +158,4 @@ MonoBehaviour:
   waterColor: {r: 0.2, g: 0.45, b: 0.95, a: 1}
   forestColor: {r: 0.12, g: 0.35, b: 0.18, a: 1}
   mountainColor: {r: 0.72156864, g: 0.4509804, b: 0.07058824, a: 1}
-  normalColor: {r: 0.4761481, g: 0.9433962, b: 0.7913182, a: 1}
+  normalColor: {r: 1, g: 0.913522, b: 0.740566, a: 1}

@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Reflection;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.Events;
+using UnityEngine.UI;
 
 public sealed class EnclosureDebug : MonoBehaviour
 {
@@ -61,11 +64,18 @@ public sealed class EnclosureDebug : MonoBehaviour
     private readonly Dictionary<Vector2Int, GameObject> markers = new();
 
     private float timer;
-    private int lastWallCount = -1;
+    private int lastWallHash = int.MinValue;
     private int lastEnclosedCount = -1;
 
     private Material baseMat;
     private Material grassMat;
+
+    private static readonly Vector2Int CastleKey = new Vector2Int(0, 0);
+
+    // -------- Runtime popup (simple choice UI) --------
+    private GameObject popupRoot;
+    private Vector2Int popupKey;
+    private bool popupHasKey;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureInstance()
@@ -101,6 +111,9 @@ public sealed class EnclosureDebug : MonoBehaviour
             views.Clear();
             enclosedSet.Clear();
             builtKind.Clear();
+
+            lastWallHash = int.MinValue;
+            lastEnclosedCount = -1;
         }
 
         if (waves == null)
@@ -111,23 +124,41 @@ public sealed class EnclosureDebug : MonoBehaviour
 
         if (allCells.Count == 0) return;
 
-        int wallCount = CountWalls();
-        if (wallCount == lastWallCount) return;
-
-        int enclosedCount = ComputeEnclosedRecolorAndMarkers();
-
-        if (wallCount != lastWallCount || enclosedCount != lastEnclosedCount)
+        int wallHash = ComputeWallStateHash();
+        if (wallHash != lastWallHash)
         {
-            Debug.Log($"[Enclosure] walls={wallCount}, enclosed={enclosedCount}");
-            lastWallCount = wallCount;
+            int enclosedCount = ComputeEnclosedRecolorAndMarkers(out int wallCount, out int openGaps);
+
+            Debug.Log($"[Enclosure] walls={wallCount}, gaps={openGaps}, enclosed={enclosedCount}");
+            lastWallHash = wallHash;
             lastEnclosedCount = enclosedCount;
+        }
+
+        ValidatePopup();
+    }
+
+    private void ValidatePopup()
+    {
+        if (popupRoot == null || !popupRoot.activeSelf) return;
+
+        bool isBuild = waves == null || waves.CurrentPhase == WaveController.Phase.Build;
+        if (!isBuild) { HidePopup(); return; }
+
+        if (!popupHasKey) { HidePopup(); return; }
+
+        // если клетка перестала быть enclosed или уже построили – закрыть
+        if (!enclosedSet.Contains(popupKey) || builtKind.ContainsKey(popupKey))
+        {
+            HidePopup();
+            return;
         }
     }
 
     public int BuildCost => buildCost;
-public int EnclosedCount => enclosedSet.Count;
-public int BuiltCount => builtKind.Count;
+    public int EnclosedCount => enclosedSet.Count;
+    public int BuiltCount => builtKind.Count;
 
+    // Теперь TryBuildAt – не строит сразу, а открывает выбор.
     public bool TryBuildAt(Vector2Int key)
     {
         bool isBuild = waves == null || waves.CurrentPhase == WaveController.Phase.Build;
@@ -136,28 +167,36 @@ public int BuiltCount => builtKind.Count;
         if (!enclosedSet.Contains(key)) return false;
         if (builtKind.ContainsKey(key)) return false;
 
+        ShowPopup(key);
+        return true;
+    }
+
+    private bool TryBuildAtKind(Vector2Int key, int kindIndex)
+    {
+        bool isBuild = waves == null || waves.CurrentPhase == WaveController.Phase.Build;
+        if (!isBuild) return false;
+
+        if (!enclosedSet.Contains(key)) return false;
+        if (builtKind.ContainsKey(key)) return false;
+
+        if (kindIndex < 0 || kindIndex >= buildMats.Count)
+            return false;
+
         if (!GoldBank.TrySpend(buildCost))
             return false;
 
-        int idx = PickRandomBuildMatIndex();
-        builtKind[key] = idx;
+        builtKind[key] = kindIndex;
 
-        // убрать маркер
+        // remove marker
         if (markers.TryGetValue(key, out var go) && go != null)
             Destroy(go);
         markers.Remove(key);
 
-        // перекрасить сразу
+        // recolor instantly
         ApplyCellMaterial(key);
 
-        Debug.Log($"[Enclosure] Built inside at {key.x},{key.y} (-{buildCost}). Gold left={GoldBank.Gold}");
+        Debug.Log($"[Enclosure] Built inside at {key.x},{key.y} kind={kindIndex} (-{buildCost}). Gold left={GoldBank.Gold}");
         return true;
-    }
-
-    private int PickRandomBuildMatIndex()
-    {
-        if (buildMats.Count <= 0) return -1;
-        return Random.Range(0, buildMats.Count);
     }
 
     private void LoadBuildMaterials()
@@ -239,59 +278,156 @@ public int BuiltCount => builtKind.Count;
         return false;
     }
 
-    private bool IsBlocked(Vector2Int key)
+    private bool IsBlockedCell(Vector2Int key)
     {
-        if (key.x == 0 && key.y == 0) return true; // castle
-        return placement.IsOccupied(key.x, key.y);  // walls
+        if (key == CastleKey) return true;
+        return placement.IsOccupied(key.x, key.y);
     }
 
-    private int CountWalls()
+    private static int Opp(int dir) => (dir + 3) % 6;
+
+    private bool HasWallOnSharedEdge(Vector2Int a, Vector2Int b, int dirAtoB)
     {
-        int c = 0;
-        for (int i = 0; i < allCells.Count; i++)
-            if (placement.IsOccupied(allCells[i].x, allCells[i].y))
-                c++;
-        return c;
+        // периметр замка считаем стеной
+        if (a == CastleKey || b == CastleKey)
+            return true;
+
+        // стык: сегмент должен быть у обоих на общем ребре
+        return placement.HasWallSegment(a.x, a.y, dirAtoB)
+            && placement.HasWallSegment(b.x, b.y, Opp(dirAtoB));
     }
 
-    private int ComputeEnclosedRecolorAndMarkers()
+    private int ComputeWallStateHash()
+    {
+        unchecked
+        {
+            int h = 17;
+            for (int i = 0; i < allCells.Count; i++)
+            {
+                var k = allCells[i];
+                if (!placement.TryGetWallMask(k.x, k.y, out int m)) continue;
+
+                int keyHash = (k.x * 73856093) ^ (k.y * 19349663) ^ (m * 83492791);
+                h = h * 31 + keyHash;
+            }
+            return h;
+        }
+    }
+
+    private int ComputeEnclosedRecolorAndMarkers(out int wallCount, out int openGaps)
     {
         enclosedSet.Clear();
 
-        var visited = new HashSet<Vector2Int>();
-        var q = new Queue<Vector2Int>();
+        var blocked = new HashSet<Vector2Int>(256);
+        wallCount = 0;
 
-        // flood fill from border over empty cells
+        for (int i = 0; i < allCells.Count; i++)
+        {
+            var k = allCells[i];
+            if (k == CastleKey) { blocked.Add(k); continue; }
+
+            if (placement.IsOccupied(k.x, k.y))
+            {
+                blocked.Add(k);
+                wallCount++;
+            }
+        }
+
+        var diag = new Dictionary<Vector2Int, List<Vector2Int>>(256);
+        var extraOutsideSeeds = new HashSet<Vector2Int>();
+        openGaps = 0;
+
+        foreach (var a in blocked)
+        {
+            for (int dir = 0; dir < 6; dir++)
+            {
+                var b = a + AxialDirs[dir];
+                if (!cellSet.Contains(b)) continue;
+                if (!blocked.Contains(b)) continue;
+
+                if (a.x > b.x || (a.x == b.x && a.y > b.y))
+                    continue;
+
+                if (HasWallOnSharedEdge(a, b, dir))
+                    continue;
+
+                openGaps++;
+
+                var c = a + AxialDirs[(dir + 5) % 6];
+                var d = a + AxialDirs[(dir + 1) % 6];
+
+                bool cIn = cellSet.Contains(c) && !blocked.Contains(c);
+                bool dIn = cellSet.Contains(d) && !blocked.Contains(d);
+
+                bool cOut = !cellSet.Contains(c);
+                bool dOut = !cellSet.Contains(d);
+
+                if (cIn && dIn)
+                {
+                    AddDiag(diag, c, d);
+                    AddDiag(diag, d, c);
+                }
+                else
+                {
+                    if (cIn && dOut) extraOutsideSeeds.Add(c);
+                    if (dIn && cOut) extraOutsideSeeds.Add(d);
+                }
+            }
+        }
+
+        var visited = new HashSet<Vector2Int>(512);
+        var q = new Queue<Vector2Int>(512);
+
         for (int i = 0; i < borderCells.Count; i++)
         {
             var b = borderCells[i];
-            if (IsBlocked(b)) continue;
+            if (blocked.Contains(b)) continue;
             if (visited.Add(b))
                 q.Enqueue(b);
+        }
+
+        foreach (var s in extraOutsideSeeds)
+        {
+            if (blocked.Contains(s)) continue;
+            if (visited.Add(s))
+                q.Enqueue(s);
         }
 
         while (q.Count > 0)
         {
             var cur = q.Dequeue();
+
             for (int dir = 0; dir < 6; dir++)
             {
                 var n = cur + AxialDirs[dir];
                 if (!cellSet.Contains(n)) continue;
-                if (IsBlocked(n)) continue;
+                if (blocked.Contains(n)) continue;
                 if (visited.Add(n))
                     q.Enqueue(n);
+            }
+
+            if (diag.TryGetValue(cur, out var list))
+            {
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var n2 = list[i];
+                    if (!cellSet.Contains(n2)) continue;
+                    if (blocked.Contains(n2)) continue;
+                    if (visited.Add(n2))
+                        q.Enqueue(n2);
+                }
             }
         }
 
         for (int i = 0; i < allCells.Count; i++)
         {
             var k = allCells[i];
-            if (IsBlocked(k)) continue;
+            if (blocked.Contains(k)) continue;
             if (!visited.Contains(k))
                 enclosedSet.Add(k);
         }
 
-        // if cell is no longer enclosed -> clear "built"
+        // если клетка перестала быть enclosed – убираем built
         var builtToRemove = new List<Vector2Int>();
         foreach (var kv in builtKind)
             if (!enclosedSet.Contains(kv.Key))
@@ -299,12 +435,10 @@ public int BuiltCount => builtKind.Count;
         for (int i = 0; i < builtToRemove.Count; i++)
             builtKind.Remove(builtToRemove[i]);
 
-        // recolor all empty cells (do not touch walls/castle)
         foreach (var kv in views)
         {
             var key = kv.Key;
-            if (key.x == 0 && key.y == 0) continue;
-            if (placement.IsOccupied(key.x, key.y)) continue;
+            if (blocked.Contains(key)) continue;
 
             ApplyCellMaterial(key);
         }
@@ -313,18 +447,29 @@ public int BuiltCount => builtKind.Count;
         return enclosedSet.Count;
     }
 
+    private static void AddDiag(Dictionary<Vector2Int, List<Vector2Int>> diag, Vector2Int from, Vector2Int to)
+    {
+        if (!diag.TryGetValue(from, out var list))
+        {
+            list = new List<Vector2Int>(4);
+            diag[from] = list;
+        }
+        for (int i = 0; i < list.Count; i++)
+            if (list[i] == to) return;
+
+        list.Add(to);
+    }
+
     private void ApplyCellMaterial(Vector2Int key)
     {
         if (!views.TryGetValue(key, out var view) || view == null || view.rend == null) return;
 
-        // built inside
         if (builtKind.TryGetValue(key, out int idx) && idx >= 0 && idx < buildMats.Count && buildMats[idx] != null)
         {
             view.rend.sharedMaterial = buildMats[idx];
             return;
         }
 
-        // enclosed but not built
         if (enclosedSet.Contains(key))
         {
             if (grassMat != null) view.rend.sharedMaterial = grassMat;
@@ -339,7 +484,6 @@ public int BuiltCount => builtKind.Count;
     {
         bool isBuild = waves == null || waves.CurrentPhase == WaveController.Phase.Build;
 
-        // remove markers not enclosed or already built
         var toRemove = new List<Vector2Int>();
         foreach (var kv in markers)
         {
@@ -353,7 +497,12 @@ public int BuiltCount => builtKind.Count;
             markers.Remove(k);
         }
 
-        if (!showMarkers) return;
+        if (!showMarkers)
+        {
+            foreach (var kv in markers)
+                if (kv.Value != null) kv.Value.SetActive(false);
+            return;
+        }
 
         foreach (var key in enclosedSet)
         {
@@ -375,11 +524,9 @@ public int BuiltCount => builtKind.Count;
         var root = new GameObject("EnclosedBuildMarker");
         root.transform.position = worldPos;
 
-        // lie on tile
         root.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
         root.transform.localScale = Vector3.one * (markerScale * 3.2f);
 
-        // clickable collider
         var col = root.AddComponent<BoxCollider>();
         col.isTrigger = true;
         col.size = new Vector3(1.2f, 1.2f, 0.2f);
@@ -387,7 +534,6 @@ public int BuiltCount => builtKind.Count;
         var click = root.AddComponent<EnclosedBuildMarker>();
         click.Init(key);
 
-        // top "?"
         var qGo = new GameObject("Q");
         qGo.transform.SetParent(root.transform, false);
         qGo.transform.localPosition = new Vector3(0f, 0.28f, 0f);
@@ -404,7 +550,6 @@ public int BuiltCount => builtKind.Count;
         var qMr = qTmp.GetComponent<MeshRenderer>();
         if (qMr != null) qMr.sortingOrder = markerSortingOrder;
 
-        // bottom row: coin + "15"
         var coin = GetCoinSprite();
         float rowY = -0.28f;
 
@@ -462,5 +607,177 @@ public int BuiltCount => builtKind.Count;
         foreach (var kv in markers)
             if (kv.Value != null) Destroy(kv.Value);
         markers.Clear();
+    }
+
+    // ---------------- Popup UI ----------------
+
+    private void ShowPopup(Vector2Int key)
+    {
+        if (buildMats.Count == 0)
+        {
+            Debug.LogWarning("[Enclosure] No build materials – popup disabled.");
+            return;
+        }
+
+        EnsureEventSystem();
+        EnsurePopupCreated();
+
+        popupKey = key;
+        popupHasKey = true;
+
+        popupRoot.SetActive(true);
+    }
+
+    private void HidePopup()
+    {
+        popupHasKey = false;
+        if (popupRoot != null) popupRoot.SetActive(false);
+    }
+
+    private void EnsureEventSystem()
+    {
+        if (EventSystem.current != null) return;
+
+        var esGo = new GameObject("_EventSystem");
+        esGo.AddComponent<EventSystem>();
+        esGo.AddComponent<StandaloneInputModule>();
+        DontDestroyOnLoad(esGo);
+    }
+
+    private void EnsurePopupCreated()
+    {
+        if (popupRoot != null) return;
+
+        var canvasGo = new GameObject("_EnclosureBuildPopupCanvas");
+        DontDestroyOnLoad(canvasGo);
+
+        var canvas = canvasGo.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 5000;
+
+        canvasGo.AddComponent<GraphicRaycaster>();
+
+        var scaler = canvasGo.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1080, 1920);
+
+        // Dim background
+        var dimGo = new GameObject("Dim");
+        dimGo.transform.SetParent(canvasGo.transform, false);
+        var dimImg = dimGo.AddComponent<Image>();
+        dimImg.color = new Color(0f, 0f, 0f, 0.55f);
+        var dimRt = dimGo.GetComponent<RectTransform>();
+        dimRt.anchorMin = Vector2.zero;
+        dimRt.anchorMax = Vector2.one;
+        dimRt.offsetMin = Vector2.zero;
+        dimRt.offsetMax = Vector2.zero;
+
+        // Panel
+        var panelGo = new GameObject("Panel");
+        panelGo.transform.SetParent(dimGo.transform, false);
+        var panelImg = panelGo.AddComponent<Image>();
+        panelImg.color = new Color(0.12f, 0.12f, 0.12f, 0.95f);
+        var panelRt = panelGo.GetComponent<RectTransform>();
+        panelRt.anchorMin = new Vector2(0.5f, 0.5f);
+        panelRt.anchorMax = new Vector2(0.5f, 0.5f);
+        panelRt.sizeDelta = new Vector2(760, 320);
+        panelRt.anchoredPosition = Vector2.zero;
+
+        var font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+
+        // Title
+        var titleGo = new GameObject("Title");
+        titleGo.transform.SetParent(panelGo.transform, false);
+        var title = titleGo.AddComponent<Text>();
+        title.font = font;
+        title.fontSize = 36;
+        title.alignment = TextAnchor.UpperCenter;
+        title.color = Color.white;
+        title.text = "BUILD INSIDE";
+        var titleRt = titleGo.GetComponent<RectTransform>();
+        titleRt.anchorMin = new Vector2(0f, 1f);
+        titleRt.anchorMax = new Vector2(1f, 1f);
+        titleRt.pivot = new Vector2(0.5f, 1f);
+        titleRt.sizeDelta = new Vector2(0f, 80);
+        titleRt.anchoredPosition = new Vector2(0f, -18f);
+
+        // Buttons row
+        int n = Mathf.Min(buildMats.Count, BuildMatNames.Length);
+        float startX = -((n - 1) * 140f) * 0.5f;
+
+        for (int i = 0; i < n; i++)
+        {
+            int idx = i;
+            string label = $"Option {i + 1}";
+
+            CreateUIButton(
+                panelGo.transform,
+                label,
+                new Vector2(startX + i * 140f, -40f),
+                new Vector2(130, 90),
+                () =>
+                {
+                    if (!popupHasKey) { HidePopup(); return; }
+                    var k = popupKey;
+                    bool ok = TryBuildAtKind(k, idx);
+                    if (ok) HidePopup();
+                },
+                font
+            );
+        }
+
+        // Close
+        CreateUIButton(
+            panelGo.transform,
+            "Cancel",
+            new Vector2(0f, -130f),
+            new Vector2(220, 70),
+            HidePopup,
+            font
+        );
+
+        popupRoot = canvasGo;
+        popupRoot.SetActive(false);
+    }
+
+    private static void CreateUIButton(
+        Transform parent,
+        string text,
+        Vector2 anchoredPos,
+        Vector2 size,
+        UnityAction onClick,
+        Font font)
+    {
+        var btnGo = new GameObject("Btn_" + text);
+        btnGo.transform.SetParent(parent, false);
+
+        var img = btnGo.AddComponent<Image>();
+        img.color = new Color(0.25f, 0.25f, 0.25f, 1f);
+
+        var btn = btnGo.AddComponent<Button>();
+        btn.onClick.RemoveAllListeners();
+        btn.onClick.AddListener(onClick);
+
+        var rt = btnGo.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0.5f);
+        rt.anchorMax = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = size;
+        rt.anchoredPosition = anchoredPos;
+
+        var labelGo = new GameObject("Label");
+        labelGo.transform.SetParent(btnGo.transform, false);
+
+        var label = labelGo.AddComponent<Text>();
+        label.font = font;
+        label.fontSize = 24;
+        label.alignment = TextAnchor.MiddleCenter;
+        label.color = Color.white;
+        label.text = text;
+
+        var lrt = labelGo.GetComponent<RectTransform>();
+        lrt.anchorMin = Vector2.zero;
+        lrt.anchorMax = Vector2.one;
+        lrt.offsetMin = Vector2.zero;
+        lrt.offsetMax = Vector2.zero;
     }
 }

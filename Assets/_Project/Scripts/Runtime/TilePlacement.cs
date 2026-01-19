@@ -154,6 +154,28 @@ public sealed class TilePlacement : MonoBehaviour
         return placed.ContainsKey(new Vector2Int(q, r));
     }
 
+    // ---------------- Enclosure helpers ----------------
+
+    /// <summary>Returns true if there is a placed wall tile at (q,r) and outputs its 6-bit wall mask.</summary>
+    public bool TryGetWallMask(int q, int r, out int mask)
+    {
+        var key = new Vector2Int(q, r);
+        if (placed.TryGetValue(key, out var t) && t != null)
+        {
+            mask = t.mask;
+            return true;
+        }
+        mask = 0;
+        return false;
+    }
+
+    /// <summary>True if there is a wall segment on cell edge 'dir' (0..5) for the placed wall tile at (q,r).</summary>
+    public bool HasWallSegment(int q, int r, int dir)
+    {
+        if (dir < 0 || dir > 5) return false;
+        return TryGetWallMask(q, r, out int m) && (m & (1 << dir)) != 0;
+    }
+
     public bool HasTowerAt(int q, int r)
     {
         var key = new Vector2Int(q, r);
