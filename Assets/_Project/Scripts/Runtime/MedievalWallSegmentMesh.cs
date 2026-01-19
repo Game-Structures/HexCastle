@@ -6,15 +6,17 @@ using UnityEngine;
 public class MedievalWallSegmentMesh : MonoBehaviour
 {
     [Header("Main size")]
-    [Tooltip("Длина сегмента от центра тайла до середины ребра (inner radius / apothem). Если autoLength включен – это значение игнорируется.")]
     public float length = 1.0f;
     public float thickness = 0.25f;
     public float height = 0.45f;
 
     [Header("Auto length (from any tile bounds)")]
     public bool autoLengthFromSceneTiles = true;
-    [Tooltip("Используется, если в сцене не найден ни один тайл/рендерер.")]
     public float autoLengthFallback = 1.0f;
+
+    [Header("Pivot / centering")]
+    [Tooltip("If ON: mesh is built centered on X (-L/2..+L/2). If OFF: 0..L.")]
+    public bool centerOnX = false;
 
     [Header("Crenels (two rows on edges)")]
     public bool crenels = true;
@@ -32,17 +34,8 @@ public class MedievalWallSegmentMesh : MonoBehaviour
     MeshFilter _mf;
     MeshRenderer _mr;
 
-    void OnEnable()
-    {
-        Ensure();
-        Rebuild();
-    }
-
-    void OnValidate()
-    {
-        Ensure();
-        Rebuild();
-    }
+    void OnEnable() { Ensure(); Rebuild(); }
+    void OnValidate() { Ensure(); Rebuild(); }
 
     void Ensure()
     {
@@ -55,12 +48,9 @@ public class MedievalWallSegmentMesh : MonoBehaviour
     {
         bool useCrenelsSubmesh = crenels && crenelsMaterial != null && wallMaterial != null;
 
-        if (useCrenelsSubmesh)
-            _mr.sharedMaterials = new[] { wallMaterial, crenelsMaterial };
-        else if (wallMaterial != null)
-            _mr.sharedMaterials = new[] { wallMaterial };
-        else if (crenelsMaterial != null)
-            _mr.sharedMaterials = new[] { crenelsMaterial };
+        if (useCrenelsSubmesh) _mr.sharedMaterials = new[] { wallMaterial, crenelsMaterial };
+        else if (wallMaterial != null) _mr.sharedMaterials = new[] { wallMaterial };
+        else if (crenelsMaterial != null) _mr.sharedMaterials = new[] { crenelsMaterial };
     }
 
     float ResolveLength(float fallback)
@@ -75,7 +65,6 @@ public class MedievalWallSegmentMesh : MonoBehaviour
         return Mathf.Max(0.001f, autoLengthFallback > 0f ? autoLengthFallback : fallback);
     }
 
-    // Берём bounds любого тайла и вычисляем inner radius (apothem) как в CastleWallAnchorSpawner
     float TryGetInnerRadiusFromAnyTile()
     {
         var anyCell = FindFirstObjectByType<HexCellView>();
@@ -91,7 +80,6 @@ public class MedievalWallSegmentMesh : MonoBehaviour
         const float SQRT3 = 1.7320508f;
         const float COS30 = 0.8660254f;
 
-        // Оценка outer radius R по двум осям для pointy/flat, потом выбираем более согласованную.
         float R_pointy_fromZ = sizeZ * 0.5f;
         float R_pointy_fromX = sizeX / SQRT3;
         float errPointy = Mathf.Abs(R_pointy_fromZ - R_pointy_fromX);
@@ -103,9 +91,7 @@ public class MedievalWallSegmentMesh : MonoBehaviour
         float R_flat = (R_flat_fromX + R_flat_fromZ) * 0.5f;
 
         float R = (errPointy <= errFlat) ? R_pointy : R_flat;
-        float innerR = R * COS30;
-
-        return innerR;
+        return R * COS30;
     }
 
     [ContextMenu("Rebuild")]
@@ -122,8 +108,11 @@ public class MedievalWallSegmentMesh : MonoBehaviour
         var verts = new List<Vector3>(2048);
         var norms = new List<Vector3>(2048);
         var uvs = new List<Vector2>(2048);
-        var tris0 = new List<int>(4096); // корпус
-        var tris1 = new List<int>(4096); // зубчики
+        var tris0 = new List<int>(4096);
+        var tris1 = new List<int>(4096);
+
+        float x0Main = centerOnX ? (-L * 0.5f) : 0f;
+        float x1Main = centerOnX ? ( L * 0.5f) : L;
 
         void AddBox(float x0, float x1, float y0, float y1, float z0, float z1, bool toCrenels)
         {
@@ -172,10 +161,10 @@ public class MedievalWallSegmentMesh : MonoBehaviour
             AddTris(toCrenels ? tris1 : tris0, v0);
         }
 
-        // Корпус: от центра тайла (0) к ребру (+X)
-        AddBox(0f, L, 0f, H, -T * 0.5f, T * 0.5f, false);
+        // Body
+        AddBox(x0Main, x1Main, 0f, H, -T * 0.5f, T * 0.5f, false);
 
-        // Зубчики: 2 ряда по краям толщины
+        // Crenels
         if (crenels)
         {
             float w = Mathf.Clamp(L * crenelWidthK, 0.02f, L);
@@ -183,8 +172,9 @@ public class MedievalWallSegmentMesh : MonoBehaviour
             float step = Mathf.Max(0.01f, w + g);
 
             float pad = Mathf.Clamp(L * endPaddingK, 0f, L * 0.45f);
-            float xStart = 0f + pad;
-            float xEnd = L - pad;
+
+            float xStart = x0Main + pad;
+            float xEnd = x1Main - pad;
 
             float d = Mathf.Clamp(T * crenelDepthK, 0.02f, T);
             float inset = Mathf.Clamp(T * edgeInsetK, 0f, T * 0.45f);
@@ -232,13 +222,6 @@ public class MedievalWallSegmentMesh : MonoBehaviour
 
         m.RecalculateBounds();
         _mf.sharedMesh = m;
-
         ApplyMaterials();
     }
-    [ContextMenu("Rebuild Mesh")]
-private void RebuildMeshMenu()
-{
-    Rebuild();
-}
-
 }

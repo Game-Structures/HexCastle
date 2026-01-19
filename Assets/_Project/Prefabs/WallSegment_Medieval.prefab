@@ -102,6 +102,7 @@ MonoBehaviour:
   height: 0.45
   autoLengthFromSceneTiles: 1
   autoLengthFallback: 1
+  centerOnX: 0
   crenels: 1
   crenelWidthK: 0.14
   crenelGapK: 0.165

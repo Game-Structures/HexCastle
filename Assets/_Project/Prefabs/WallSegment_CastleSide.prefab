@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &2390089649854392440
+--- !u!1 &6903539639403627411
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,48 +8,47 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1179593606904763777}
-  - component: {fileID: 4998910063115598220}
-  - component: {fileID: 8541347691826899061}
-  - component: {fileID: 8793054001620963283}
-  - component: {fileID: -1256719084018125177}
+  - component: {fileID: 3259098868822389659}
+  - component: {fileID: 8236712516580266404}
+  - component: {fileID: -1848364996194352675}
+  - component: {fileID: 4272830331396325837}
   m_Layer: 0
-  m_Name: CastlePrefab
+  m_Name: WallSegment_CastleSide
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &1179593606904763777
+--- !u!4 &3259098868822389659
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2390089649854392440}
+  m_GameObject: {fileID: 6903539639403627411}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.6, z: 0}
+  m_LocalPosition: {x: 552.0003, y: 586.6993, z: 70.336914}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!33 &4998910063115598220
+--- !u!33 &8236712516580266404
 MeshFilter:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2390089649854392440}
-  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!23 &8541347691826899061
+  m_GameObject: {fileID: 6903539639403627411}
+  m_Mesh: {fileID: 0}
+--- !u!23 &-1848364996194352675
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2390089649854392440}
+  m_GameObject: {fileID: 6903539639403627411}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -63,7 +62,8 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: b092906c9de578443b79fc3e34442c3f, type: 2}
+  - {fileID: 2100000, guid: d60706199f641cd44b96f532cc5ae123, type: 2}
+  - {fileID: 2100000, guid: caa4f83ca5a7fbd4e8fc688bf94596e9, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -85,46 +85,30 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!65 &8793054001620963283
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2390089649854392440}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 1, y: 1, z: 1}
-  m_Center: {x: 0, y: 0, z: 0}
---- !u!114 &-1256719084018125177
+--- !u!114 &4272830331396325837
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2390089649854392440}
+  m_GameObject: {fileID: 6903539639403627411}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4fe2cecbcc3b574fb6a5c0da2565a89, type: 3}
+  m_Script: {fileID: 11500000, guid: b87859ec982a33d44b086c14dd68f388, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  centerCellOverride: {fileID: 0}
-  segmentPrefab: {fileID: 6903539639403627411, guid: ca5bb961536e4f3419ef8ccf53baaf4e, type: 3}
-  lengthAxisIsX: 1
-  lengthMul: 1.2
-  thickness: 0.35
-  height: 0.8
-  yOffset: 0.02
-  outwardOffset: 0
-  wallMaterial: {fileID: 0}
-  crenelsMaterial: {fileID: 0}
+  length: 1.1
+  thickness: 0.25
+  height: 0.45
+  autoLengthFromSceneTiles: 1
+  autoLengthFallback: 1
+  centerOnX: 1
+  crenels: 1
+  crenelWidthK: 0.14
+  crenelGapK: 0.165
+  crenelDepthK: 0.146
+  crenelHeightK: 0.2
+  edgeInsetK: 0.018
+  endPaddingK: 0.12
+  wallMaterial: {fileID: 2100000, guid: d60706199f641cd44b96f532cc5ae123, type: 2}
+  crenelsMaterial: {fileID: 2100000, guid: caa4f83ca5a7fbd4e8fc688bf94596e9, type: 2}

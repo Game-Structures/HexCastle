@@ -185,36 +185,69 @@ public sealed class Wall3DVisual : MonoBehaviour
     /// innerRadius: апофема (центр → середина ребра).
     /// </summary>
     public void BuildPerimeterRing(float innerRadius)
+{
+    if (innerRadius <= 0.001f) innerRadius = 1.0f;
+
+    EnsureRoot();
+    ClearRoot();
+
+    float thickness = _useAbsDims ? _absThickness : (innerRadius * thicknessK);
+    float height    = _useAbsDims ? _absHeight    : (innerRadius * heightK);
+
+    thickness = Mathf.Max(0.01f, thickness);
+    height    = Mathf.Max(0.05f, height);
+
+    float baseY = height * 0.5f;
+
+    // длина стороны = 2 * innerR * tan(30°)
+    float sideLen = 2f * innerRadius * 0.577350269f;
+
+    _root.localRotation = Quaternion.identity;
+
+    // NEW: если назначен сегмент-префаб (WallSegment_Medieval / WallSegment_CastleSide) – строим из него
+    if (wallSegmentPrefab != null)
     {
-        if (innerRadius <= 0.001f) innerRadius = 1.0f;
-
-        EnsureRoot();
-        ClearRoot();
-
-        float thickness = _useAbsDims ? _absThickness : (innerRadius * thicknessK);
-        float height = _useAbsDims ? _absHeight : (innerRadius * heightK);
-
-        thickness = Mathf.Max(0.01f, thickness);
-        height = Mathf.Max(0.05f, height);
-
-        float baseY = height * 0.5f;
-
-        // длина стороны = 2 * innerR * tan(30°)
-        float sideLen = 2f * innerRadius * 0.577350269f;
-
-        _root.localRotation = Quaternion.identity;
-
         for (int i = 0; i < 6; i++)
         {
             Vector3 n = DirXZ(i);                         // нормаль к стороне (к её середине)
-            Vector3 tangent = new Vector3(-n.z, 0f, n.x);  // вдоль стороны
+            Vector3 tangent = new Vector3(-n.z, 0f, n.x); // вдоль стороны
 
-            Quaternion rot = Quaternion.LookRotation(tangent, Vector3.up);
+            var segGo = Instantiate(wallSegmentPrefab, _root);
+            segGo.name = $"PerimSeg_{i}";
 
-            SpawnCube($"PerimSeg_{i}", _root,
-                n * innerRadius + new Vector3(0f, baseY, 0f),
-                rot,
-                new Vector3(thickness, height, sideLen));
+            // КЛЮЧЕВОЕ: ставим в центр стороны (без сдвига на halfLen)
+            segGo.transform.localPosition = n * innerRadius;
+            segGo.transform.localRotation = Quaternion.LookRotation(tangent, Vector3.up);
+            segGo.transform.localScale = Vector3.one;
+
+            var mesh = segGo.GetComponent<MedievalWallSegmentMesh>();
+            if (mesh == null) mesh = segGo.GetComponentInChildren<MedievalWallSegmentMesh>(true);
+
+            if (mesh != null)
+            {
+                // ожидается, что у сегмента включен CenterOnX (тогда pivot по центру длины)
+                mesh.length = sideLen;
+                mesh.thickness = thickness;
+                mesh.height = height;
+                mesh.Rebuild();
+            }
         }
+        return;
     }
+
+    // fallback: кубы
+    for (int i = 0; i < 6; i++)
+    {
+        Vector3 n = DirXZ(i);
+        Vector3 tangent = new Vector3(-n.z, 0f, n.x);
+        Quaternion rot = Quaternion.LookRotation(tangent, Vector3.up);
+
+        SpawnCube($"PerimSeg_{i}", _root,
+            n * innerRadius + new Vector3(0f, baseY, 0f),
+            rot,
+            new Vector3(thickness, height, sideLen));
+    }
+}
+
+
 }
