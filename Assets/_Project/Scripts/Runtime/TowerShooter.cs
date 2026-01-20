@@ -5,21 +5,24 @@ public sealed class TowerShooter : MonoBehaviour
     [Header("Type")]
     [SerializeField] private TowerType type = TowerType.Archer;
 
+    [Header("Targets")]
+    [SerializeField] private AttackTargetKind attackTargets = AttackTargetKind.All;
+
     [Header("Attack")]
     [SerializeField] private int damage = 20;
     [SerializeField] private float fireInterval = 1.0f;
     [SerializeField] private int rangeTiles = 2;
 
     [Header("Range padding")]
-    [SerializeField] private float rangeExtraTiles = 0.05f; // общий запас
-    [SerializeField] private float aoeRadiusTiles = 1.0f;   // только для Cannon
+    [SerializeField] private float rangeExtraTiles = 0.05f;
+    [SerializeField] private float aoeRadiusTiles = 1.0f;
 
     [Header("World scale")]
     [Tooltip("Distance between centers of neighbor cells (world units).")]
     [SerializeField] private float cellSpacing = 1f;
 
     [Header("Projectile (CastleProjectile)")]
-    [SerializeField] private CastleProjectile projectilePrefab; // optional
+    [SerializeField] private CastleProjectile projectilePrefab;
     [SerializeField] private float projectileSpeed = 8f;
     [SerializeField] private float projectileHitRadius = 0.08f;
     [SerializeField] private float projectileYOffset = 0.35f;
@@ -32,8 +35,8 @@ public sealed class TowerShooter : MonoBehaviour
     [Header("Debug")]
     [SerializeField] private bool debugLogs = false;
 
-    [SerializeField] private Color magicBeamColor = new Color(1f, 0.2f, 0.7f, 1f); // pink
-    [SerializeField] private Color flameBeamColor = new Color(1f, 0.5f, 0.0f, 1f); // orange
+    [SerializeField] private Color magicBeamColor = new Color(1f, 0.2f, 0.7f, 1f);
+    [SerializeField] private Color flameBeamColor = new Color(1f, 0.5f, 0.0f, 1f);
 
     private float timer;
     private WaveController waves;
@@ -46,7 +49,6 @@ public sealed class TowerShooter : MonoBehaviour
     private float aoeRadiusWorld;
     private int aoeDamage;
 
-    // ---------- NEW: global range multiplier (e.g., Telescope) ----------
     private static float _globalRangeMul = 1f;
 
     public static void SetGlobalRangeMultiplier(float mul)
@@ -56,22 +58,19 @@ public sealed class TowerShooter : MonoBehaviour
 
     private float GetRangeWorld()
     {
-        // Telescope scales effective attack radius for all towers
         return (rangeTiles + rangeExtraTiles) * cellSpacing * _globalRangeMul;
     }
-    // -------------------------------------------------------------------
 
     public void Init(TowerType t, float spacing)
     {
         type = t;
         cellSpacing = Mathf.Max(0.01f, spacing);
 
-        // defaults (можешь править тут баланс)
         switch (type)
         {
             case TowerType.Archer:
                 rangeTiles = 3;
-                rangeExtraTiles = 0.25f;
+                rangeExtraTiles = 0.1f;
                 damage = 17;
                 fireInterval = 1.5f;
                 projectileSpeed = 10f;
@@ -80,7 +79,7 @@ public sealed class TowerShooter : MonoBehaviour
 
             case TowerType.Cannon:
                 rangeTiles = 4;
-                rangeExtraTiles = 0.25f;
+                rangeExtraTiles = 0.1f;
                 aoeRadiusTiles = 1.25f;
                 damage = 22;
                 fireInterval = 5f;
@@ -90,17 +89,16 @@ public sealed class TowerShooter : MonoBehaviour
 
             case TowerType.Magic:
                 rangeTiles = 2;
-                rangeExtraTiles = 0.25f;
+                rangeExtraTiles = 0.1f;
                 damage = 2;
                 fireInterval = 0.1f;
-                // beam only, projectile not used
                 break;
 
             case TowerType.Flame:
                 rangeTiles = 1;
-                rangeExtraTiles = 0.5f;
+                rangeExtraTiles = 0.1f;
                 damage = 9;
-                fireInterval = 0.2f;
+                fireInterval = 0.3f;
                 projectileSpeed = 14f;
                 projectileScale = 0.09f;
                 break;
@@ -115,12 +113,10 @@ public sealed class TowerShooter : MonoBehaviour
         var t = transform.Find("Muzzle");
         muzzle = (t != null) ? t : transform;
 
-        // beam renderer (for magic/flame)
         beam = GetComponent<LineRenderer>();
         if (beam == null)
             beam = gameObject.AddComponent<LineRenderer>();
 
-        // Если вдруг AddComponent не сработал (крайне редко) – просто не упадем
         if (beam != null)
         {
             beam.enabled = false;
@@ -129,7 +125,6 @@ public sealed class TowerShooter : MonoBehaviour
             beam.numCapVertices = 6;
             beam.numCornerVertices = 6;
 
-            // материал, который учитывает start/endColor
             beam.material = new Material(Shader.Find("Sprites/Default"));
 
             beam.startWidth = beamWidth;
@@ -154,7 +149,6 @@ public sealed class TowerShooter : MonoBehaviour
 
         if (type == TowerType.Magic)
         {
-            // instant hit + beam
             DrawBeamTo(target.transform.position, isFlame: false);
             target.Damage(damage);
 
@@ -165,23 +159,36 @@ public sealed class TowerShooter : MonoBehaviour
         if (type == TowerType.Flame)
         {
             DrawBeamTo(target.transform.position, isFlame: true);
-
-            // NEW: telescope affects flame radius too (same as target acquisition radius)
             ApplyAOE(transform.position, GetRangeWorld(), damage);
 
             if (debugLogs) Debug.Log($"[TowerShooter] FLAME AOE dmg={damage}");
             return;
         }
 
-        // Archer / Cannon use projectile visuals
         SpawnProjectile(target);
 
         if (debugLogs) Debug.Log($"[TowerShooter] Fire {type} -> {target.name} dmg={damage}");
     }
 
+    private bool MatchesAttackTargets(EnemyHealth e)
+    {
+        if (e == null) return false;
+
+        switch (attackTargets)
+        {
+            case AttackTargetKind.All:
+                return true;
+            case AttackTargetKind.Ground:
+                return e.TargetKind == EnemyTargetKind.Ground;
+            case AttackTargetKind.Air:
+                return e.TargetKind == EnemyTargetKind.Air;
+            default:
+                return true;
+        }
+    }
+
     private EnemyHealth FindNearestEnemyInRange()
     {
-        // NEW: telescope affects targeting range
         float rangeWorld = GetRangeWorld();
         float bestDistSq = rangeWorld * rangeWorld;
 
@@ -198,7 +205,9 @@ public sealed class TowerShooter : MonoBehaviour
                 continue;
             }
 
-            // NEW: враг в лесу невидим – не выбираем цель
+            if (!MatchesAttackTargets(e))
+                continue;
+
             var stealth = e.GetComponent<EnemyForestStealth>();
             if (stealth != null && stealth.IsHidden)
                 continue;
@@ -228,7 +237,6 @@ public sealed class TowerShooter : MonoBehaviour
         }
         else
         {
-            // fallback: sphere
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = $"TowerProjectile_{type}";
 
@@ -241,7 +249,6 @@ public sealed class TowerShooter : MonoBehaviour
             proj = go.AddComponent<CastleProjectile>();
         }
 
-        // init projectile to hit target (single-target damage inside CastleProjectile)
         proj.Init(
             target,
             damage,
@@ -251,7 +258,6 @@ public sealed class TowerShooter : MonoBehaviour
             debugLogs
         );
 
-        // Cannon: add AOE damage near the expected hit time
         if (type == TowerType.Cannon)
         {
             float aoeW = Mathf.Max(0f, aoeRadiusTiles) * cellSpacing;
@@ -285,6 +291,13 @@ public sealed class TowerShooter : MonoBehaviour
                 enemies.RemoveAt(i);
                 continue;
             }
+
+            if (!MatchesAttackTargets(e))
+                continue;
+
+            var stealth = e.GetComponent<EnemyForestStealth>();
+            if (stealth != null && stealth.IsHidden)
+                continue;
 
             float d2 = (e.transform.position - aoeCenter).sqrMagnitude;
             if (d2 <= r2)
@@ -351,6 +364,13 @@ public sealed class TowerShooter : MonoBehaviour
                 enemies.RemoveAt(i);
                 continue;
             }
+
+            if (!MatchesAttackTargets(e))
+                continue;
+
+            var stealth = e.GetComponent<EnemyForestStealth>();
+            if (stealth != null && stealth.IsHidden)
+                continue;
 
             float d2 = (e.transform.position - center).sqrMagnitude;
             if (d2 <= r2)

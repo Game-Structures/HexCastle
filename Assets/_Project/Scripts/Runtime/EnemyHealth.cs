@@ -5,6 +5,9 @@ public sealed class EnemyHealth : MonoBehaviour
 {
     public static readonly List<EnemyHealth> Alive = new List<EnemyHealth>(256);
 
+    [Header("Kind")]
+    [SerializeField] private EnemyTargetKind targetKind = EnemyTargetKind.Ground;
+
     [SerializeField] private int maxHp = 100;
     private int hp;
 
@@ -14,6 +17,7 @@ public sealed class EnemyHealth : MonoBehaviour
 
     public int CurrentHp => hp;
     public int MaxHp => maxHp;
+    public EnemyTargetKind TargetKind => targetKind;
 
     private void OnEnable()
     {
@@ -38,11 +42,16 @@ public sealed class EnemyHealth : MonoBehaviour
         hp = maxHp;
     }
 
+    public void SetTargetKind(EnemyTargetKind kind)
+    {
+        targetKind = kind;
+    }
+
     public void Damage(int amount)
     {
         if (amount <= 0) return;
 
-        // NEW: в лесу враг неуязвим
+        // forest stealth: hidden enemy is invulnerable
         var stealth = GetComponent<EnemyForestStealth>();
         if (stealth != null && stealth.IsHidden)
             return;

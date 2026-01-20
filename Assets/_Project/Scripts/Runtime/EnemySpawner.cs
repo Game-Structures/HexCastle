@@ -15,11 +15,12 @@ public sealed class EnemySpawner : MonoBehaviour
             SpawnOne();
         }
     }
-public void Init(Transform castleTransform, Transform[] spawnTransforms)
-{
-    castle = castleTransform;
-    spawnPoints = spawnTransforms;
-}
+
+    public void Init(Transform castleTransform, Transform[] spawnTransforms)
+    {
+        castle = castleTransform;
+        spawnPoints = spawnTransforms;
+    }
 
     private void SpawnOne()
     {
@@ -33,8 +34,14 @@ public void Init(Transform castleTransform, Transform[] spawnTransforms)
         idx++;
 
         GameObject go = Instantiate(enemyPrefab, sp.position + new Vector3(0f, 0.3f, 0f), Quaternion.identity);
+
+        var hp = go.GetComponent<EnemyHealth>();
+        if (hp == null) hp = go.AddComponent<EnemyHealth>();
+        hp.SetTargetKind(EnemyTargetKind.Ground);
+
         var mover = go.GetComponent<EnemyMover>();
         if (mover == null) mover = go.AddComponent<EnemyMover>();
         mover.SetTarget(castle);
+        mover.SetTargetKind(EnemyTargetKind.Ground);
     }
 }

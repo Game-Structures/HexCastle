@@ -12,6 +12,9 @@ public sealed class EnemyType : ScriptableObject
     [Header("Stats")]
     public EnemyStats stats;
 
+    [Header("Kind")]
+    public EnemyTargetKind targetKind = EnemyTargetKind.Ground;
+
     [Header("Spawn rules")]
     [Min(1)] public int minWave = 1;
     [Min(0)] public int maxWave = 0; // 0 = no limit

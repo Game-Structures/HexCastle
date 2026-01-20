@@ -44,7 +44,7 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
         GameObject prefab = type.prefab != null ? type.prefab : enemyPrefab;
         EnemyStats stats = type.stats != null ? type.stats : enemyStats;
 
-        SpawnInternal(prefab, stats, type.id, wave);
+        SpawnInternal(prefab, stats, type.id, wave, type.targetKind);
     }
 
     private void SpawnOneRandomForCurrentWave()
@@ -56,10 +56,12 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
         EnemyStats stats = (picked != null && picked.stats != null) ? picked.stats : enemyStats;
 
         string typeId = picked != null ? picked.id : "legacy";
-        SpawnInternal(prefab, stats, typeId, wave);
+        EnemyTargetKind kind = picked != null ? picked.targetKind : EnemyTargetKind.Ground;
+
+        SpawnInternal(prefab, stats, typeId, wave, kind);
     }
 
-    private void SpawnInternal(GameObject prefab, EnemyStats stats, string typeId, int wave)
+    private void SpawnInternal(GameObject prefab, EnemyStats stats, string typeId, int wave, EnemyTargetKind kind)
     {
         if (grid == null || castle == null || grid.EdgeCells == null || grid.EdgeCells.Count == 0)
         {
@@ -88,21 +90,23 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
 
             var hp = go.GetComponent<EnemyHealth>();
             if (hp == null) hp = go.AddComponent<EnemyHealth>();
+            hp.SetTargetKind(kind);
             if (stats != null) hp.SetStats(stats);
 
             var mover = go.GetComponent<EnemyMover>();
             if (mover == null) mover = go.AddComponent<EnemyMover>();
             mover.SetTarget(castle);
+            mover.SetTargetKind(kind);
             if (stats != null) mover.SetStats(stats);
 
-            // ВАЖНО: урон по стенам через EnemyWallDamage (из EnemyStats)
+            // Wall damage – only for Ground enemies
             var wallDmg = go.GetComponent<EnemyWallDamage>();
             if (wallDmg == null) wallDmg = go.AddComponent<EnemyWallDamage>();
 
-            wallDmg.enabled = true;          // на случай если был выключен в префабе
+            wallDmg.enabled = (kind == EnemyTargetKind.Ground);
             if (stats != null) wallDmg.SetStats(stats);
 
-            Debug.Log($"[EnemySpawner] Spawned type={typeId} wave={wave} dmg={(stats != null ? stats.attackDamage : 50)} int={(stats != null ? stats.attackInterval : 5f)}");
+            Debug.Log($"[EnemySpawner] Spawned type={typeId} wave={wave} kind={kind} dmg={(stats != null ? stats.attackDamage : 50)} int={(stats != null ? stats.attackInterval : 5f)}");
             return;
         }
 

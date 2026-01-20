@@ -1,4 +1,3 @@
-// CastleShooter.cs
 using UnityEngine;
 
 public sealed class CastleShooter : MonoBehaviour
@@ -7,12 +6,15 @@ public sealed class CastleShooter : MonoBehaviour
     [SerializeField] private int rangeCells = 5;
     [SerializeField] private float hexSize = 1f;
 
+    [Header("Targets")]
+    [SerializeField] private AttackTargetKind attackTargets = AttackTargetKind.All;
+
     [Header("Attack")]
     [SerializeField] private int damage = 50;
     [SerializeField] private float attackInterval = 2f;
 
     [Header("Projectile")]
-    [SerializeField] private CastleProjectile projectilePrefab; // можно оставить пустым
+    [SerializeField] private CastleProjectile projectilePrefab;
     [SerializeField] private float projectileSpeed = 8f;
     [SerializeField] private float projectileHitRadius = 0.08f;
     [SerializeField] private float projectileYOffset = 0.35f;
@@ -21,7 +23,6 @@ public sealed class CastleShooter : MonoBehaviour
 
     private float timer;
 
-    // чтобы HexGridSpawner мог выставить hexSize
     public void SetHexSize(float size) => hexSize = Mathf.Max(0.01f, size);
 
     private void Update()
@@ -42,6 +43,23 @@ public sealed class CastleShooter : MonoBehaviour
             Debug.Log($"[CastleShooter] Fire at {target.name} dmg={damage}");
     }
 
+    private bool MatchesAttackTargets(EnemyHealth e)
+    {
+        if (e == null) return false;
+
+        switch (attackTargets)
+        {
+            case AttackTargetKind.All:
+                return true;
+            case AttackTargetKind.Ground:
+                return e.TargetKind == EnemyTargetKind.Ground;
+            case AttackTargetKind.Air:
+                return e.TargetKind == EnemyTargetKind.Air;
+            default:
+                return true;
+        }
+    }
+
     private void SpawnProjectile(EnemyHealth target)
     {
         float y = transform.position.y + projectileYOffset;
@@ -55,7 +73,6 @@ public sealed class CastleShooter : MonoBehaviour
         }
         else
         {
-            // fallback: простой шарик без префаба
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "CastleProjectile";
 
@@ -68,8 +85,6 @@ public sealed class CastleShooter : MonoBehaviour
             proj = go.AddComponent<CastleProjectile>();
         }
 
-        // ВАЖНО: сигнатура Init в твоём проекте:
-        // Init(EnemyHealth t, int dmg, float spd, float hitR, float y, bool logs)
         proj.Init(
             target,
             damage,
@@ -90,7 +105,6 @@ public sealed class CastleShooter : MonoBehaviour
 
         var enemies = EnemyHealth.Alive;
 
-        // идём с конца, чтобы вычищать null
         for (int i = enemies.Count - 1; i >= 0; i--)
         {
             var e = enemies[i];
@@ -100,7 +114,9 @@ public sealed class CastleShooter : MonoBehaviour
                 continue;
             }
 
-            // NEW: враг в лесу невидим – не выбираем цель
+            if (!MatchesAttackTargets(e))
+                continue;
+
             var stealth = e.GetComponent<EnemyForestStealth>();
             if (stealth != null && stealth.IsHidden)
                 continue;

@@ -6,6 +6,9 @@ public sealed class EnemyMover : MonoBehaviour
 {
     [SerializeField] private EnemyStats stats;
 
+    [Header("Kind")]
+    [SerializeField] private EnemyTargetKind targetKind = EnemyTargetKind.Ground;
+
     private Transform target;
     private Rigidbody rb;
 
@@ -14,9 +17,9 @@ public sealed class EnemyMover : MonoBehaviour
 
     private float attackTimer;
 
-    // ---- Pathfinding ----
+    // ---- Pathfinding (Ground only) ----
     private Dictionary<Vector2Int, HexCellView> cellsByAxial;
-    private List<Vector2Int> currentPath;     // list of axial keys
+    private List<Vector2Int> currentPath;
     private int pathIndex;
 
     private float repathTimer;
@@ -31,11 +34,44 @@ public sealed class EnemyMover : MonoBehaviour
     public void SetTarget(Transform t) => target = t;
     public void SetStats(EnemyStats s) => stats = s;
 
+    public EnemyTargetKind TargetKind => targetKind;
+
+    public void SetTargetKind(EnemyTargetKind kind)
+    {
+        targetKind = kind;
+        ApplyMovementMode();
+    }
+
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
+        ApplyMovementMode();
+
         BuildCellCache();
         lastPos = transform.position;
+    }
+
+    private void ApplyMovementMode()
+    {
+        if (rb == null) return;
+
+        // Air ignores collisions and obstacles – movement handled by MovePosition
+        if (targetKind == EnemyTargetKind.Air)
+        {
+            rb.useGravity = false;
+            rb.isKinematic = true;
+            rb.detectCollisions = false;
+            rb.velocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.constraints = RigidbodyConstraints.FreezeRotation;
+        }
+        else
+        {
+            // Ground – keep physics
+            rb.isKinematic = false;
+            rb.detectCollisions = true;
+            rb.constraints = RigidbodyConstraints.FreezeRotation;
+        }
     }
 
     private void BuildCellCache()
@@ -54,17 +90,65 @@ public sealed class EnemyMover : MonoBehaviour
     {
         if (GameState.IsGameOver)
         {
-            rb.velocity = Vector3.zero;
+            if (rb != null) rb.velocity = Vector3.zero;
             return;
         }
 
-        if (target == null)
+        if (target == null || rb == null)
             return;
 
         float speed = stats != null ? stats.speed : 0.5f;
         float attackInterval = stats != null ? stats.attackInterval : 5f;
         int attackDamage = stats != null ? stats.attackDamage : 50;
 
+        if (targetKind == EnemyTargetKind.Air)
+        {
+            TickAir(speed, attackInterval, attackDamage);
+            return;
+        }
+
+        TickGround(speed, attackInterval, attackDamage);
+    }
+
+    private void TickAir(float speed, float attackInterval, int attackDamage)
+    {
+        // move directly to castle, ignore all obstacles
+        Vector3 p = rb.position;
+        Vector3 tp = target.position;
+        tp.y = p.y;
+
+        Vector3 next = Vector3.MoveTowards(p, tp, speed * Time.fixedDeltaTime);
+        rb.MovePosition(next);
+
+        // attack castle when close (no collisions needed)
+        if (castleTarget == null)
+        {
+            var c = target.GetComponent<CastleHealth>();
+            if (c == null) c = target.GetComponentInParent<CastleHealth>();
+            if (c == null) c = target.gameObject.AddComponent<CastleHealth>();
+            castleTarget = c;
+        }
+
+        const float attackRange = 0.55f;
+        float d2 = (target.position - transform.position).sqrMagnitude;
+
+        if (d2 <= attackRange * attackRange)
+        {
+            attackTimer -= Time.fixedDeltaTime;
+            if (attackTimer <= 0f)
+            {
+                attackTimer = Mathf.Max(0.02f, attackInterval);
+                if (castleTarget != null) castleTarget.Damage(attackDamage);
+            }
+        }
+        else
+        {
+            attackTimer = Mathf.Min(attackTimer, 0.05f);
+        }
+    }
+
+    private void TickGround(float speed, float attackInterval, int attackDamage)
+    {
         bool isAttacking = wallTarget != null || castleTarget != null;
 
         if (isAttacking)
@@ -93,7 +177,7 @@ public sealed class EnemyMover : MonoBehaviour
             Repath();
         }
 
-        // Проверка "застрял"
+        // stuck check
         stuckTimer += Time.fixedDeltaTime;
         if (stuckTimer >= StuckCheckInterval)
         {
@@ -108,10 +192,10 @@ public sealed class EnemyMover : MonoBehaviour
             }
         }
 
-        // NEW: сглаживание пути (пропуск точек, если есть прямая видимость)
+        // path smoothing
         TrySkipWaypointsByLineOfSight();
 
-        // Движение
+        // move
         Vector3 waypoint = GetCurrentWaypoint();
         Vector3 dir = waypoint - transform.position;
         dir.y = 0f;
@@ -166,7 +250,6 @@ public sealed class EnemyMover : MonoBehaviour
         var curKey = new Vector2Int(curCell.q, curCell.r);
         pathIndex = Mathf.Clamp(pathIndex, 0, currentPath.Count - 1);
 
-        // Ищем самую далёкую точку в текущем пути, до которой есть "прямая" по гексам без блоков
         for (int i = currentPath.Count - 1; i > pathIndex; i--)
         {
             if (HasLineOfSight(curKey, currentPath[i]))
@@ -225,7 +308,7 @@ public sealed class EnemyMover : MonoBehaviour
         return bestCell;
     }
 
-    // ---- Terrain rules ----
+    // ---- Terrain rules (Ground only) ----
     private bool IsWalkableCell(Vector2Int key)
     {
         if (!cellsByAxial.TryGetValue(key, out var cell) || cell == null)
@@ -238,13 +321,12 @@ public sealed class EnemyMover : MonoBehaviour
             && tag.type != HexCastle.Map.MapTerrainType.Mountain;
     }
 
-    // "Прямая видимость" по гекс-линии (без воды/гор по пути)
     private bool HasLineOfSight(Vector2Int a, Vector2Int b)
     {
         int n = AxialDistance(a, b);
         if (n <= 1) return true;
 
-        for (int i = 1; i < n; i++) // пропускаем старт и финиш
+        for (int i = 1; i < n; i++)
         {
             float t = i / (float)n;
             var p = CubeRound(CubeLerp(AxialToCube(a), AxialToCube(b), t));
@@ -327,7 +409,7 @@ public sealed class EnemyMover : MonoBehaviour
         total.Reverse();
 
         if (total.Count > 1)
-            total.RemoveAt(0); // убрать старт
+            total.RemoveAt(0);
 
         return total;
     }
@@ -354,7 +436,6 @@ public sealed class EnemyMover : MonoBehaviour
         };
     }
 
-    // ---- Cube helpers for hex line ----
     private struct Cube
     {
         public float x, y, z;
@@ -400,9 +481,12 @@ public sealed class EnemyMover : MonoBehaviour
         return new Cube(rx, ry, rz);
     }
 
-    // ---- Combat collisions (как было) ----
+    // ---- Combat collisions (Ground only) ----
     private void OnCollisionEnter(Collision collision)
     {
+        if (targetKind == EnemyTargetKind.Air)
+            return;
+
         if (collision.gameObject.name.Contains("WallPrefab"))
         {
             var w = collision.gameObject.GetComponent<WallHealth>();
@@ -430,6 +514,9 @@ public sealed class EnemyMover : MonoBehaviour
 
     private void OnCollisionExit(Collision collision)
     {
+        if (targetKind == EnemyTargetKind.Air)
+            return;
+
         if (collision.gameObject.name.Contains("WallPrefab"))
         {
             if (wallTarget != null && collision.gameObject == wallTarget.gameObject)
