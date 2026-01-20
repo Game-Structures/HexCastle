@@ -4,8 +4,6 @@ using System.Reflection;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.Events;
-using UnityEngine.UI;
 
 public sealed class EnclosureDebug : MonoBehaviour
 {
@@ -23,6 +21,7 @@ public sealed class EnclosureDebug : MonoBehaviour
 
     [Header("Polling")]
     [SerializeField] private float pollInterval = 0.25f;
+[SerializeField] private EnclosureBuildCatalog buildCatalog;
 
     [Header("Markers / Build")]
     [SerializeField] private bool showMarkers = true;
@@ -34,6 +33,12 @@ public sealed class EnclosureDebug : MonoBehaviour
     [Header("Coin sprite (Resources path)")]
     [SerializeField] private string coinSpriteResourcePath = "CoinSprite"; // Assets/Resources/CoinSprite.png
 
+[Header("Build Spawn")]
+[SerializeField] private float builtPrefabYOffset = 0.25f;
+
+private readonly Dictionary<Vector2Int, GameObject> builtSpawned = new();
+private Transform builtRoot;
+
     // Build materials are loaded from Resources by these names:
     private static readonly string[] BuildMatNames =
     {
@@ -42,8 +47,11 @@ public sealed class EnclosureDebug : MonoBehaviour
         "MatTile_Orange",
         "MatTile_Pink",
         "MatTile_Purple",
+        "MatTile_Red",
     };
 
+    [Header("Popup options (manual)")]
+   
     private readonly List<Material> buildMats = new();
     private Sprite coinSprite;
 
@@ -72,8 +80,8 @@ public sealed class EnclosureDebug : MonoBehaviour
 
     private static readonly Vector2Int CastleKey = new Vector2Int(0, 0);
 
-    // -------- Runtime popup (simple choice UI) --------
-    private GameObject popupRoot;
+    // Popup link
+    private EnclosureBuildPopup popup;
     private Vector2Int popupKey;
     private bool popupHasKey;
 
@@ -104,7 +112,10 @@ public sealed class EnclosureDebug : MonoBehaviour
 
             TryResolveMaterialsFromTilePlacement();
             LoadBuildMaterials();
-            GetCoinSprite(); // preload (optional)
+            GetCoinSprite();
+
+            EnsurePopupInstance();
+            EnsurePopupOptionsPrepared();
 
             ClearMarkers();
             allCells.Clear();
@@ -139,14 +150,13 @@ public sealed class EnclosureDebug : MonoBehaviour
 
     private void ValidatePopup()
     {
-        if (popupRoot == null || !popupRoot.activeSelf) return;
+        if (popup == null || !popup.IsOpen) return;
 
         bool isBuild = waves == null || waves.CurrentPhase == WaveController.Phase.Build;
         if (!isBuild) { HidePopup(); return; }
 
         if (!popupHasKey) { HidePopup(); return; }
 
-        // если клетка перестала быть enclosed или уже построили – закрыть
         if (!enclosedSet.Contains(popupKey) || builtKind.ContainsKey(popupKey))
         {
             HidePopup();
@@ -158,7 +168,7 @@ public sealed class EnclosureDebug : MonoBehaviour
     public int EnclosedCount => enclosedSet.Count;
     public int BuiltCount => builtKind.Count;
 
-    // Теперь TryBuildAt – не строит сразу, а открывает выбор.
+    // marker click
     public bool TryBuildAt(Vector2Int key)
     {
         bool isBuild = waves == null || waves.CurrentPhase == WaveController.Phase.Build;
@@ -171,33 +181,70 @@ public sealed class EnclosureDebug : MonoBehaviour
         return true;
     }
 
-    private bool TryBuildAtKind(Vector2Int key, int kindIndex)
+    private bool TryBuildAtKind(Vector2Int key, int optionIndex)
+{
+    Debug.Log($"[EnclosureBuild] TryBuildAt optionIndex={optionIndex} at {key.x},{key.y}");
+
+    bool isBuild = waves == null || waves.CurrentPhase == WaveController.Phase.Build;
+    if (!isBuild) { Debug.LogWarning("[EnclosureBuild] FAIL: not in Build phase"); return false; }
+
+    if (!enclosedSet.Contains(key)) { Debug.LogWarning("[EnclosureBuild] FAIL: cell not enclosed anymore"); return false; }
+    if (builtKind.ContainsKey(key)) { Debug.LogWarning("[EnclosureBuild] FAIL: already built"); return false; }
+
+    // Берём опцию из каталога (runtimePopupOptions формируется из buildCatalog)
+    if (runtimePopupOptions == null || optionIndex < 0 || optionIndex >= runtimePopupOptions.Count)
     {
-        bool isBuild = waves == null || waves.CurrentPhase == WaveController.Phase.Build;
-        if (!isBuild) return false;
-
-        if (!enclosedSet.Contains(key)) return false;
-        if (builtKind.ContainsKey(key)) return false;
-
-        if (kindIndex < 0 || kindIndex >= buildMats.Count)
-            return false;
-
-        if (!GoldBank.TrySpend(buildCost))
-            return false;
-
-        builtKind[key] = kindIndex;
-
-        // remove marker
-        if (markers.TryGetValue(key, out var go) && go != null)
-            Destroy(go);
-        markers.Remove(key);
-
-        // recolor instantly
-        ApplyCellMaterial(key);
-
-        Debug.Log($"[Enclosure] Built inside at {key.x},{key.y} kind={kindIndex} (-{buildCost}). Gold left={GoldBank.Gold}");
-        return true;
+        Debug.LogWarning($"[EnclosureBuild] FAIL: optionIndex out of range. optionIndex={optionIndex}, options={(runtimePopupOptions==null?0:runtimePopupOptions.Count)}");
+        return false;
     }
+
+    var opt = runtimePopupOptions[optionIndex];
+    int cost = opt != null ? opt.cost : buildCost;
+
+    if (!GoldBank.TrySpend(cost))
+    {
+        Debug.LogWarning($"[EnclosureBuild] FAIL: not enough gold. gold={GoldBank.Gold}, cost={cost}");
+        return false;
+    }
+
+    builtKind[key] = optionIndex;
+
+    // убрать маркер
+    if (markers.TryGetValue(key, out var markerGo) && markerGo != null)
+        Destroy(markerGo);
+    markers.Remove(key);
+
+    // корень для построек
+    if (builtRoot == null)
+    {
+        var rootGo = GameObject.Find("_EnclosureBuiltRoot");
+        if (rootGo == null) rootGo = new GameObject("_EnclosureBuiltRoot");
+        builtRoot = rootGo.transform;
+    }
+
+    // если вдруг уже был объект – удалить
+    if (builtSpawned.TryGetValue(key, out var old) && old != null)
+        Destroy(old);
+    builtSpawned.Remove(key);
+
+    // заспавнить prefab (если назначен)
+    if (opt != null && opt.prefab != null && views.TryGetValue(key, out var view) && view != null)
+    {
+        Vector3 pos = view.transform.position + new Vector3(0f, builtPrefabYOffset, 0f);
+        var go = Instantiate(opt.prefab, pos, Quaternion.identity, builtRoot);
+        go.name = $"EnclBuilt_{key.x}_{key.y}_{opt.prefab.name}";
+        builtSpawned[key] = go;
+    }
+    else
+    {
+        Debug.LogWarning("[EnclosureBuild] No prefab assigned for this option (opt.prefab is null) or no cell view found.");
+    }
+
+    Debug.Log($"[EnclosureBuild] OK: built at {key.x},{key.y} optionIndex={optionIndex} (-{cost}). Gold left={GoldBank.Gold}");
+    return true;
+}
+
+
 
     private void LoadBuildMaterials()
     {
@@ -224,6 +271,118 @@ public sealed class EnclosureDebug : MonoBehaviour
         if (coinSprite == null)
             Debug.LogWarning($"[Enclosure] Coin sprite not found in Resources at '{coinSpriteResourcePath}'.");
         return coinSprite;
+    }
+
+    private void EnsurePopupInstance()
+    {
+        if (popup != null) return;
+
+        popup = FindFirstObjectByType<EnclosureBuildPopup>();
+        if (popup != null) return;
+
+        var go = new GameObject("_EnclosureBuildPopup");
+        DontDestroyOnLoad(go);
+        popup = go.AddComponent<EnclosureBuildPopup>();
+    }
+
+    private readonly List<EnclosureBuildOption> runtimePopupOptions = new();
+
+private void EnsurePopupOptionsPrepared()
+{
+    runtimePopupOptions.Clear();
+
+    // 1) Если назначен Catalog и в нём есть options — используем их
+    if (buildCatalog != null && buildCatalog.options != null && buildCatalog.options.Count > 0)
+    {
+        for (int i = 0; i < buildCatalog.options.Count; i++)
+        {
+            var opt = buildCatalog.options[i];
+            if (opt != null) runtimePopupOptions.Add(opt);
+        }
+        return;
+    }
+
+    // 2) Фолбэк: нагенерим варианты из материалов (как раньше)
+    var icon = GetCoinSprite();
+    for (int i = 0; i < buildMats.Count; i++)
+    {
+        runtimePopupOptions.Add(new EnclosureBuildOption
+        {
+            icon = icon,
+            title = $"Option {i + 1}",
+            description = "Placeholder description",
+            cost = buildCost,
+            tileMaterial = null,
+            prefab = null
+        });
+
+        // ВАЖНО: kindIndex хранится в самом opt? Его у тебя нет в классе.
+        // Поэтому используем правило: optionIndex == kindIndex.
+        // Т.е. порядок в каталоге должен соответствовать buildMats, либо мы сделаем поле kindIndex (след. шаг).
+    }
+}
+
+
+    private void ShowPopup(Vector2Int key)
+{
+    // Можно открывать меню даже если материалов нет – каталог может работать только с префабами.
+    EnsureEventSystem();
+    EnsurePopupInstance();
+    EnsurePopupOptionsPrepared();
+
+    popupKey = key;
+    popupHasKey = true;
+
+    // Если вообще нет опций – нечего показывать
+    if (runtimePopupOptions == null || runtimePopupOptions.Count == 0)
+    {
+        Debug.LogWarning("[EnclosurePopup] No options to show (buildCatalog is empty and fallback options are empty).");
+        popupHasKey = false;
+        return;
+    }
+
+    popup.Open(
+        runtimePopupOptions,
+        onSelectIndex: (optionIndex) =>
+        {
+            Debug.Log($"[EnclosurePopup] Selected optionIndex={optionIndex} for cell={popupKey.x},{popupKey.y}, popupHasKey={popupHasKey}");
+
+            if (!popupHasKey)
+            {
+                Debug.LogWarning("[EnclosurePopup] popupHasKey=false, ignoring selection");
+                return;
+            }
+
+            // Пока упрощение: optionIndex == kindIndex
+            bool ok = TryBuildAtKind(popupKey, optionIndex);
+
+            Debug.Log($"[EnclosurePopup] TryBuildAtKind returned ok={ok}");
+
+            if (ok) HidePopup();
+        },
+        onClose: () =>
+        {
+            Debug.Log("[EnclosurePopup] Closed");
+            popupHasKey = false;
+        }
+    );
+}
+
+
+    private void HidePopup()
+    {
+        popupHasKey = false;
+        if (popup != null) popup.Close();
+    }
+
+    private void EnsureEventSystem()
+    {
+        if (EventSystem.current != null) return;
+
+        var esGo = new GameObject("_EventSystem");
+        esGo.AddComponent<EventSystem>();
+        esGo.AddComponent<StandaloneInputModule>();
+        DontDestroyOnLoad(esGo);
     }
 
     private void TryResolveMaterialsFromTilePlacement()
@@ -276,12 +435,6 @@ public sealed class EnclosureDebug : MonoBehaviour
                 return true;
         }
         return false;
-    }
-
-    private bool IsBlockedCell(Vector2Int key)
-    {
-        if (key == CastleKey) return true;
-        return placement.IsOccupied(key.x, key.y);
     }
 
     private static int Opp(int dir) => (dir + 3) % 6;
@@ -439,7 +592,6 @@ public sealed class EnclosureDebug : MonoBehaviour
         {
             var key = kv.Key;
             if (blocked.Contains(key)) continue;
-
             ApplyCellMaterial(key);
         }
 
@@ -607,177 +759,5 @@ public sealed class EnclosureDebug : MonoBehaviour
         foreach (var kv in markers)
             if (kv.Value != null) Destroy(kv.Value);
         markers.Clear();
-    }
-
-    // ---------------- Popup UI ----------------
-
-    private void ShowPopup(Vector2Int key)
-    {
-        if (buildMats.Count == 0)
-        {
-            Debug.LogWarning("[Enclosure] No build materials – popup disabled.");
-            return;
-        }
-
-        EnsureEventSystem();
-        EnsurePopupCreated();
-
-        popupKey = key;
-        popupHasKey = true;
-
-        popupRoot.SetActive(true);
-    }
-
-    private void HidePopup()
-    {
-        popupHasKey = false;
-        if (popupRoot != null) popupRoot.SetActive(false);
-    }
-
-    private void EnsureEventSystem()
-    {
-        if (EventSystem.current != null) return;
-
-        var esGo = new GameObject("_EventSystem");
-        esGo.AddComponent<EventSystem>();
-        esGo.AddComponent<StandaloneInputModule>();
-        DontDestroyOnLoad(esGo);
-    }
-
-    private void EnsurePopupCreated()
-    {
-        if (popupRoot != null) return;
-
-        var canvasGo = new GameObject("_EnclosureBuildPopupCanvas");
-        DontDestroyOnLoad(canvasGo);
-
-        var canvas = canvasGo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 5000;
-
-        canvasGo.AddComponent<GraphicRaycaster>();
-
-        var scaler = canvasGo.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1080, 1920);
-
-        // Dim background
-        var dimGo = new GameObject("Dim");
-        dimGo.transform.SetParent(canvasGo.transform, false);
-        var dimImg = dimGo.AddComponent<Image>();
-        dimImg.color = new Color(0f, 0f, 0f, 0.55f);
-        var dimRt = dimGo.GetComponent<RectTransform>();
-        dimRt.anchorMin = Vector2.zero;
-        dimRt.anchorMax = Vector2.one;
-        dimRt.offsetMin = Vector2.zero;
-        dimRt.offsetMax = Vector2.zero;
-
-        // Panel
-        var panelGo = new GameObject("Panel");
-        panelGo.transform.SetParent(dimGo.transform, false);
-        var panelImg = panelGo.AddComponent<Image>();
-        panelImg.color = new Color(0.12f, 0.12f, 0.12f, 0.95f);
-        var panelRt = panelGo.GetComponent<RectTransform>();
-        panelRt.anchorMin = new Vector2(0.5f, 0.5f);
-        panelRt.anchorMax = new Vector2(0.5f, 0.5f);
-        panelRt.sizeDelta = new Vector2(760, 320);
-        panelRt.anchoredPosition = Vector2.zero;
-
-        var font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-
-        // Title
-        var titleGo = new GameObject("Title");
-        titleGo.transform.SetParent(panelGo.transform, false);
-        var title = titleGo.AddComponent<Text>();
-        title.font = font;
-        title.fontSize = 36;
-        title.alignment = TextAnchor.UpperCenter;
-        title.color = Color.white;
-        title.text = "BUILD INSIDE";
-        var titleRt = titleGo.GetComponent<RectTransform>();
-        titleRt.anchorMin = new Vector2(0f, 1f);
-        titleRt.anchorMax = new Vector2(1f, 1f);
-        titleRt.pivot = new Vector2(0.5f, 1f);
-        titleRt.sizeDelta = new Vector2(0f, 80);
-        titleRt.anchoredPosition = new Vector2(0f, -18f);
-
-        // Buttons row
-        int n = Mathf.Min(buildMats.Count, BuildMatNames.Length);
-        float startX = -((n - 1) * 140f) * 0.5f;
-
-        for (int i = 0; i < n; i++)
-        {
-            int idx = i;
-            string label = $"Option {i + 1}";
-
-            CreateUIButton(
-                panelGo.transform,
-                label,
-                new Vector2(startX + i * 140f, -40f),
-                new Vector2(130, 90),
-                () =>
-                {
-                    if (!popupHasKey) { HidePopup(); return; }
-                    var k = popupKey;
-                    bool ok = TryBuildAtKind(k, idx);
-                    if (ok) HidePopup();
-                },
-                font
-            );
-        }
-
-        // Close
-        CreateUIButton(
-            panelGo.transform,
-            "Cancel",
-            new Vector2(0f, -130f),
-            new Vector2(220, 70),
-            HidePopup,
-            font
-        );
-
-        popupRoot = canvasGo;
-        popupRoot.SetActive(false);
-    }
-
-    private static void CreateUIButton(
-        Transform parent,
-        string text,
-        Vector2 anchoredPos,
-        Vector2 size,
-        UnityAction onClick,
-        Font font)
-    {
-        var btnGo = new GameObject("Btn_" + text);
-        btnGo.transform.SetParent(parent, false);
-
-        var img = btnGo.AddComponent<Image>();
-        img.color = new Color(0.25f, 0.25f, 0.25f, 1f);
-
-        var btn = btnGo.AddComponent<Button>();
-        btn.onClick.RemoveAllListeners();
-        btn.onClick.AddListener(onClick);
-
-        var rt = btnGo.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0.5f, 0.5f);
-        rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = size;
-        rt.anchoredPosition = anchoredPos;
-
-        var labelGo = new GameObject("Label");
-        labelGo.transform.SetParent(btnGo.transform, false);
-
-        var label = labelGo.AddComponent<Text>();
-        label.font = font;
-        label.fontSize = 24;
-        label.alignment = TextAnchor.MiddleCenter;
-        label.color = Color.white;
-        label.text = text;
-
-        var lrt = labelGo.GetComponent<RectTransform>();
-        lrt.anchorMin = Vector2.zero;
-        lrt.anchorMax = Vector2.one;
-        lrt.offsetMin = Vector2.zero;
-        lrt.offsetMax = Vector2.zero;
     }
 }

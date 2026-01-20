@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ab29f297028e95d4488d1fa72a7cf72a, type: 3}
+  m_Name: EnclosureBuildCatalog_Default
+  m_EditorClassIdentifier: 
+  options:
+  - icon: {fileID: 21300000, guid: 9f8e87cd9af70bf4ba4cedd244c440c2, type: 3}
+    title: Object 1
+    description: +5 coin every wave
+    cost: 15
+    tileMaterial: {fileID: 0}
+    prefab: {fileID: 9181814409223890528, guid: 91ff52465bba8504bb65327174d905dd, type: 3}
+  - icon: {fileID: 21300000, guid: ab509cf7d46a1154885602cd40450778, type: 3}
+    title: Object 2
+    description: Increase Wall HP +100
+    cost: 15
+    tileMaterial: {fileID: 0}
+    prefab: {fileID: 6065253122703294513, guid: 87e93f2524676d94393da9c70bf3e755, type: 3}
+  - icon: {fileID: 21300000, guid: fd16490c2bb11e14e9807d10f61c4ab9, type: 3}
+    title: Object 3
+    description: Increae Range of Tower +10%
+    cost: 15
+    tileMaterial: {fileID: 0}
+    prefab: {fileID: 875256016801335040, guid: 9030ed33826444f4aa8fcd4838453c7f, type: 3}
+  - icon: {fileID: 21300000, guid: 801a2c9ee8db1e3498dd94074d671c93, type: 3}
+    title: Object 4
+    description: Repairs a random wall for 50 HP each round
+    cost: 15
+    tileMaterial: {fileID: 0}
+    prefab: {fileID: 3873533113673545922, guid: 2e7fd56010b37e14086296e9f64cafa4, type: 3}
+  - icon: {fileID: 21300000, guid: 8be11b11fb5782b43ba924085c6927bc, type: 3}
+    title: Object 5
+    description: Adds archers to a random wall at the start of the round
+    cost: 15
+    tileMaterial: {fileID: 0}
+    prefab: {fileID: 984416066528994085, guid: f4d04d26473be1849a0217b5fd5c2785, type: 3}
