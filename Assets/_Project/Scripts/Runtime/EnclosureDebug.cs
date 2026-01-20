@@ -191,14 +191,21 @@ private Transform builtRoot;
     if (!enclosedSet.Contains(key)) { Debug.LogWarning("[EnclosureBuild] FAIL: cell not enclosed anymore"); return false; }
     if (builtKind.ContainsKey(key)) { Debug.LogWarning("[EnclosureBuild] FAIL: already built"); return false; }
 
-    // Берём опцию из каталога (runtimePopupOptions формируется из buildCatalog)
     if (runtimePopupOptions == null || optionIndex < 0 || optionIndex >= runtimePopupOptions.Count)
     {
-        Debug.LogWarning($"[EnclosureBuild] FAIL: optionIndex out of range. optionIndex={optionIndex}, options={(runtimePopupOptions==null?0:runtimePopupOptions.Count)}");
+        Debug.LogWarning($"[EnclosureBuild] FAIL: optionIndex out of range. optionIndex={optionIndex}, options={(runtimePopupOptions == null ? 0 : runtimePopupOptions.Count)}");
         return false;
     }
 
     var opt = runtimePopupOptions[optionIndex];
+
+    // NEW: уникальная постройка (открытие артиллерии) – разрешена только 1 раз
+    if (IsArtilleryUnlockOption(opt) && IsArtilleryUnlocked())
+    {
+        Debug.LogWarning("[EnclosureBuild] FAIL: ArtilleryUnlock building already built");
+        return false;
+    }
+
     int cost = opt != null ? opt.cost : buildCost;
 
     if (!GoldBank.TrySpend(cost))
@@ -209,12 +216,10 @@ private Transform builtRoot;
 
     builtKind[key] = optionIndex;
 
-    // убрать маркер
     if (markers.TryGetValue(key, out var markerGo) && markerGo != null)
         Destroy(markerGo);
     markers.Remove(key);
 
-    // корень для построек
     if (builtRoot == null)
     {
         var rootGo = GameObject.Find("_EnclosureBuiltRoot");
@@ -222,12 +227,10 @@ private Transform builtRoot;
         builtRoot = rootGo.transform;
     }
 
-    // если вдруг уже был объект – удалить
     if (builtSpawned.TryGetValue(key, out var old) && old != null)
         Destroy(old);
     builtSpawned.Remove(key);
 
-    // заспавнить prefab (если назначен)
     if (opt != null && opt.prefab != null && views.TryGetValue(key, out var view) && view != null)
     {
         Vector3 pos = view.transform.position + new Vector3(0f, builtPrefabYOffset, 0f);
@@ -243,6 +246,7 @@ private Transform builtRoot;
     Debug.Log($"[EnclosureBuild] OK: built at {key.x},{key.y} optionIndex={optionIndex} (-{cost}). Gold left={GoldBank.Gold}");
     return true;
 }
+
 
 
 
@@ -287,6 +291,19 @@ private Transform builtRoot;
 
     private readonly List<EnclosureBuildOption> runtimePopupOptions = new();
 
+private static bool IsArtilleryUnlockOption(EnclosureBuildOption opt)
+{
+    if (opt == null || opt.prefab == null) return false;
+    var b = opt.prefab.GetComponent<CastleBuilding>();
+    return b != null && b.id == BuildingId.ArtilleryUnlock;
+}
+
+private static bool IsArtilleryUnlocked()
+{
+    return BuildingEffectsManager.Instance != null && BuildingEffectsManager.Instance.IsArtilleryUnlocked;
+}
+
+
 private void EnsurePopupOptionsPrepared()
 {
     runtimePopupOptions.Clear();
@@ -294,11 +311,20 @@ private void EnsurePopupOptionsPrepared()
     // 1) Если назначен Catalog и в нём есть options — используем их
     if (buildCatalog != null && buildCatalog.options != null && buildCatalog.options.Count > 0)
     {
+        bool artilleryAlreadyUnlocked = IsArtilleryUnlocked();
+
         for (int i = 0; i < buildCatalog.options.Count; i++)
         {
             var opt = buildCatalog.options[i];
-            if (opt != null) runtimePopupOptions.Add(opt);
+            if (opt == null) continue;
+
+            // NEW: уникальная постройка – показываем только если ещё не построена
+            if (artilleryAlreadyUnlocked && IsArtilleryUnlockOption(opt))
+                continue;
+
+            runtimePopupOptions.Add(opt);
         }
+
         return;
     }
 
@@ -315,12 +341,9 @@ private void EnsurePopupOptionsPrepared()
             tileMaterial = null,
             prefab = null
         });
-
-        // ВАЖНО: kindIndex хранится в самом opt? Его у тебя нет в классе.
-        // Поэтому используем правило: optionIndex == kindIndex.
-        // Т.е. порядок в каталоге должен соответствовать buildMats, либо мы сделаем поле kindIndex (след. шаг).
     }
 }
+
 
 
     private void ShowPopup(Vector2Int key)

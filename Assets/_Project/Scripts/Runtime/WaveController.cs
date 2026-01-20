@@ -46,6 +46,10 @@ public sealed class WaveController : MonoBehaviour
     {
         GoldBank.Reset(startGold);
 
+        // эффекты в начале Build-фазы (старт игры)
+        if (BuildingEffectsManager.Instance != null)
+            BuildingEffectsManager.Instance.OnBuildRoundStart();
+
         if (hand == null) hand = FindFirstObjectByType<WallHandManager>();
         if (hand != null) hand.NewRoundHand();
     }
@@ -127,7 +131,7 @@ public sealed class WaveController : MonoBehaviour
         for (int i = 0; i < round.subWaves.Length; i++)
         {
             var sw = round.subWaves[i];
-            Debug.Log($"[WavePlan] SubWave {i+1}/{round.subWaves.Length} delay={sw.delayFromPrevious} interval={sw.spawnInterval}");
+            Debug.Log($"[WavePlan] SubWave {i + 1}/{round.subWaves.Length} delay={sw.delayFromPrevious} interval={sw.spawnInterval}");
 
             if (sw == null) continue;
 
@@ -142,7 +146,7 @@ public sealed class WaveController : MonoBehaviour
             {
                 var pack = sw.packs[p];
                 if (pack.type != null)
-    Debug.Log($"[WavePlan] Pack type={pack.type.id} count={pack.count}");
+                    Debug.Log($"[WavePlan] Pack type={pack.type.id} count={pack.count}");
 
                 if (pack.type == null) continue;
                 int count = Mathf.Max(1, pack.count);
@@ -162,6 +166,10 @@ public sealed class WaveController : MonoBehaviour
 
     private void EndCombatToBuild()
     {
+        // эффекты в конце Combat-фазы (кузница лечит здесь)
+        if (BuildingEffectsManager.Instance != null)
+            BuildingEffectsManager.Instance.OnCombatRoundEnd();
+
         // reward for current wave
         int reward = GetRewardForWave(waveNumber);
         GoldBank.Add(reward);
@@ -175,6 +183,10 @@ public sealed class WaveController : MonoBehaviour
         planActive = false;
         planSpawningComplete = false;
         planRoutine = null;
+
+        // эффекты в начале новой Build-фазы (банк даёт монеты здесь)
+        if (BuildingEffectsManager.Instance != null)
+            BuildingEffectsManager.Instance.OnBuildRoundStart();
 
         // new hand at BUILD start
         if (hand == null) hand = FindFirstObjectByType<WallHandManager>();

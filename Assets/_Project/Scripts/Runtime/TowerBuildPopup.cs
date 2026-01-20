@@ -43,7 +43,7 @@ public sealed class TowerBuildPopup : MonoBehaviour
         if (artilleryButton != null)
         {
             artilleryButton.onClick.RemoveAllListeners();
-            artilleryButton.onClick.AddListener(() => Choose(TowerType.Artillery));
+            artilleryButton.onClick.AddListener(() => Choose(TowerType.Cannon));
         }
 
         if (magicButton != null)
@@ -68,6 +68,14 @@ public sealed class TowerBuildPopup : MonoBehaviour
     public void Show(TowerSlot slot)
     {
         current = slot;
+
+        // NEW: disable Cannon button until unlocked by building
+        if (artilleryButton != null)
+        {
+            bool unlocked = BuildingEffectsManager.Instance != null && BuildingEffectsManager.Instance.IsArtilleryUnlocked;
+            artilleryButton.interactable = unlocked;
+        }
+
         if (root != null) root.SetActive(true);
     }
 
@@ -80,6 +88,14 @@ public sealed class TowerBuildPopup : MonoBehaviour
     private void Choose(TowerType type)
     {
         if (current == null) { Hide(); return; }
+
+        // NEW: safety guard (logic also duplicated in TilePlacement)
+        if (type == TowerType.Cannon)
+        {
+            bool unlocked = BuildingEffectsManager.Instance != null && BuildingEffectsManager.Instance.IsArtilleryUnlocked;
+            if (!unlocked) return;
+        }
+
         current.TryBuild(type);
         Hide();
     }

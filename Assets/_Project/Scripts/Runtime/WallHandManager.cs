@@ -286,7 +286,7 @@ public sealed class WallHandManager : MonoBehaviour
         {
             TowerType.Archer => spriteTowerArcher,
             TowerType.Magic => spriteTowerMagic,
-            TowerType.Artillery => spriteTowerArtillery,
+            TowerType.Cannon => spriteTowerArtillery,
             TowerType.Flame => spriteTowerFlame,
             _ => spriteTowerArcher
         };
@@ -300,7 +300,7 @@ public sealed class WallHandManager : MonoBehaviour
             {
                 TowerType.Archer => comboStraightArcher,
                 TowerType.Magic => comboStraightMagic,
-                TowerType.Artillery => comboStraightArtillery,
+                TowerType.Cannon => comboStraightArtillery,
                 TowerType.Flame => comboStraightFlame,
                 _ => comboStraightArcher
             },
@@ -308,7 +308,7 @@ public sealed class WallHandManager : MonoBehaviour
             {
                 TowerType.Archer => comboSmallCurveArcher,
                 TowerType.Magic => comboSmallCurveMagic,
-                TowerType.Artillery => comboSmallCurveArtillery,
+                TowerType.Cannon => comboSmallCurveArtillery,
                 TowerType.Flame => comboSmallCurveFlame,
                 _ => comboSmallCurveArcher
             },
@@ -316,7 +316,7 @@ public sealed class WallHandManager : MonoBehaviour
             {
                 TowerType.Archer => comboStrongCurveArcher,
                 TowerType.Magic => comboStrongCurveMagic,
-                TowerType.Artillery => comboStrongCurveArtillery,
+                TowerType.Cannon => comboStrongCurveArtillery,
                 TowerType.Flame => comboStrongCurveFlame,
                 _ => comboStrongCurveArcher
             },

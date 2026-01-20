@@ -12,8 +12,9 @@ GameObject:
   - component: {fileID: 4865983407383538921}
   - component: {fileID: 9011808631150222446}
   - component: {fileID: 7740696328401989356}
+  - component: {fileID: -2265254771865357095}
   m_Layer: 0
-  m_Name: Cube
+  m_Name: Quarry
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -105,3 +106,16 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &-2265254771865357095
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6065253122703294513}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be62d812a777cac43b388cedde535620, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id: 2

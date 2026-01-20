@@ -1,4 +1,3 @@
-// TowerShooter.cs
 using UnityEngine;
 
 public sealed class TowerShooter : MonoBehaviour
@@ -12,8 +11,8 @@ public sealed class TowerShooter : MonoBehaviour
     [SerializeField] private int rangeTiles = 2;
 
     [Header("Range padding")]
-    [SerializeField] private float rangeExtraTiles = 0.25f; // общий запас
-    [SerializeField] private float aoeRadiusTiles = 1.0f;   // только для Artillery
+    [SerializeField] private float rangeExtraTiles = 0.05f; // общий запас
+    [SerializeField] private float aoeRadiusTiles = 1.0f;   // только для Cannon
 
     [Header("World scale")]
     [Tooltip("Distance between centers of neighbor cells (world units).")]
@@ -42,10 +41,25 @@ public sealed class TowerShooter : MonoBehaviour
 
     private LineRenderer beam;
 
-    // artillery aoe pending
+    // Cannon aoe pending
     private Vector3 aoeCenter;
     private float aoeRadiusWorld;
     private int aoeDamage;
+
+    // ---------- NEW: global range multiplier (e.g., Telescope) ----------
+    private static float _globalRangeMul = 1f;
+
+    public static void SetGlobalRangeMultiplier(float mul)
+    {
+        _globalRangeMul = Mathf.Max(0.1f, mul);
+    }
+
+    private float GetRangeWorld()
+    {
+        // Telescope scales effective attack radius for all towers
+        return (rangeTiles + rangeExtraTiles) * cellSpacing * _globalRangeMul;
+    }
+    // -------------------------------------------------------------------
 
     public void Init(TowerType t, float spacing)
     {
@@ -64,7 +78,7 @@ public sealed class TowerShooter : MonoBehaviour
                 projectileScale = 0.12f;
                 break;
 
-            case TowerType.Artillery:
+            case TowerType.Cannon:
                 rangeTiles = 4;
                 rangeExtraTiles = 0.25f;
                 aoeRadiusTiles = 1.25f;
@@ -151,12 +165,15 @@ public sealed class TowerShooter : MonoBehaviour
         if (type == TowerType.Flame)
         {
             DrawBeamTo(target.transform.position, isFlame: true);
-            ApplyAOE(transform.position, (rangeTiles + rangeExtraTiles) * cellSpacing, damage);
+
+            // NEW: telescope affects flame radius too (same as target acquisition radius)
+            ApplyAOE(transform.position, GetRangeWorld(), damage);
+
             if (debugLogs) Debug.Log($"[TowerShooter] FLAME AOE dmg={damage}");
             return;
         }
 
-        // Archer / Artillery / Flame use projectile visuals
+        // Archer / Cannon use projectile visuals
         SpawnProjectile(target);
 
         if (debugLogs) Debug.Log($"[TowerShooter] Fire {type} -> {target.name} dmg={damage}");
@@ -164,7 +181,8 @@ public sealed class TowerShooter : MonoBehaviour
 
     private EnemyHealth FindNearestEnemyInRange()
     {
-        float rangeWorld = (rangeTiles + rangeExtraTiles) * cellSpacing;
+        // NEW: telescope affects targeting range
+        float rangeWorld = GetRangeWorld();
         float bestDistSq = rangeWorld * rangeWorld;
 
         EnemyHealth best = null;
@@ -233,8 +251,8 @@ public sealed class TowerShooter : MonoBehaviour
             debugLogs
         );
 
-        // Artillery: add AOE damage near the expected hit time
-        if (type == TowerType.Artillery)
+        // Cannon: add AOE damage near the expected hit time
+        if (type == TowerType.Cannon)
         {
             float aoeW = Mathf.Max(0f, aoeRadiusTiles) * cellSpacing;
             if (aoeW > 0.01f)

@@ -55,7 +55,7 @@ public sealed class TilePlacement : MonoBehaviour
 
     [Header("Towers – Prefabs (assign your 3D cylinders here)")]
     [SerializeField] private GameObject towerArcher3DPrefab;
-    [SerializeField] private GameObject towerArtillery3DPrefab;
+    [SerializeField] private GameObject towerCannon3DPrefab;
     [SerializeField] private GameObject towerMagic3DPrefab;
     [SerializeField] private GameObject towerFlame3DPrefab;
 
@@ -533,7 +533,7 @@ if (slot != null)
         return type switch
         {
             TowerType.Archer => towerArcher3DPrefab,
-            TowerType.Artillery => towerArtillery3DPrefab,
+            TowerType.Cannon => towerCannon3DPrefab,
             TowerType.Magic => towerMagic3DPrefab,
             TowerType.Flame => towerFlame3DPrefab,
             _ => null
@@ -554,6 +554,13 @@ if (slot != null)
 
     if (!IsWallTypeAllowedForTower(wallTile.type))
         return false;
+
+    // NEW: Cannon is locked until CannonUnlock building is built
+    if (type == TowerType.Cannon)
+    {
+        if (BuildingEffectsManager.Instance == null || !BuildingEffectsManager.Instance.IsArtilleryUnlocked)
+            return false;
+    }
 
     var prefab = GetTowerPrefab(type);
     if (prefab == null)
@@ -606,6 +613,7 @@ if (slot != null)
 
     return true;
 }
+
 
 
     private void RemoveTowerAtInternal(Vector2Int key)
