@@ -8,6 +8,10 @@ public sealed class EnemyHealth : MonoBehaviour
     [SerializeField] private int maxHp = 100;
     private int hp;
 
+    [Header("VFX")]
+    [SerializeField] private bool showDamagePopup = true;
+    [SerializeField] private Vector3 popupOffset = new Vector3(0f, 0.8f, 0f);
+
     public int CurrentHp => hp;
     public int MaxHp => maxHp;
 
@@ -35,21 +39,23 @@ public sealed class EnemyHealth : MonoBehaviour
     }
 
     public void Damage(int amount)
-{
-    if (amount <= 0) return;
+    {
+        if (amount <= 0) return;
 
-    // NEW: в лесу враг неуязвим
-    var stealth = GetComponent<EnemyForestStealth>();
-    if (stealth != null && stealth.IsHidden)
-        return;
+        // NEW: в лесу враг неуязвим
+        var stealth = GetComponent<EnemyForestStealth>();
+        if (stealth != null && stealth.IsHidden)
+            return;
 
-    hp -= amount;
-    Debug.Log($"Enemy HP: {hp}");
+        if (showDamagePopup)
+            DamagePopupWorld.Spawn(transform.position + popupOffset, amount);
 
-    if (hp <= 0)
-        Die();
-}
+        hp -= amount;
+        Debug.Log($"Enemy HP: {hp}");
 
+        if (hp <= 0)
+            Die();
+    }
 
     private void Die()
     {

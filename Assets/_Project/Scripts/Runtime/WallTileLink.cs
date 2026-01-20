@@ -7,6 +7,13 @@ public sealed class WallTileLink : MonoBehaviour
     [SerializeField] private float baseMaxHp = 500f;
     [SerializeField] private float hp = 500f;
 
+    [Header("Damage popup")]
+    [SerializeField] private bool showDamagePopup = true;
+    [SerializeField] private Vector3 popupOffset = new Vector3(0f, 1.6f, 0f);
+
+    [Header("Auto HP bar")]
+    [SerializeField] private bool autoAddHpBar = true;
+
     [Header("Debug")]
     [SerializeField] private bool logHp = true;
     [SerializeField] private float logEverySeconds = 0.25f;
@@ -48,7 +55,6 @@ public sealed class WallTileLink : MonoBehaviour
     {
         if (!initialized) return;
 
-        // при увеличении бонуса — добавляем HP, чтобы было «+100 HP»
         if (delta > 0f) hp += delta;
 
         hp = Mathf.Clamp(hp, 0f, MaxHp);
@@ -69,8 +75,17 @@ public sealed class WallTileLink : MonoBehaviour
         initialized = true;
         nextLogTime = 0f;
 
+        if (autoAddHpBar)
+            EnsureHpBar();
+
         if (logHp)
             Debug.Log($"[WallHP] init q={q} r={r} hp={hp:0}/{MaxHp:0}");
+    }
+
+    private void EnsureHpBar()
+    {
+        if (GetComponent<WallHpBarWorld>() != null) return;
+        gameObject.AddComponent<WallHpBarWorld>();
     }
 
     public void ApplyDamage(float damage)
@@ -79,6 +94,17 @@ public sealed class WallTileLink : MonoBehaviour
         if (damage <= 0f) return;
 
         hp -= damage;
+
+        // Красные цифры урона по нашим объектам
+        if (showDamagePopup)
+        {
+            int dmgInt = Mathf.Max(1, Mathf.RoundToInt(damage));
+            DamagePopupWorld.Spawn(
+                transform.position + popupOffset,
+                dmgInt,
+                DamagePopupWorld.PopupKind.PlayerDamaged
+            );
+        }
 
         if (logHp && Application.isPlaying && Time.time >= nextLogTime)
         {
@@ -112,35 +138,34 @@ public sealed class WallTileLink : MonoBehaviour
     }
 
     public static bool HealRandomDamagedWall(float amount)
-{
-    if (amount <= 0f) return false;
-
-    var all = FindObjectsOfType<WallTileLink>();
-    if (all == null || all.Length == 0) return false;
-
-    List<WallTileLink> damaged = null;
-    for (int i = 0; i < all.Length; i++)
     {
-        var w = all[i];
-        if (w == null) continue;
-        if (w.IsDamaged)
+        if (amount <= 0f) return false;
+
+        var all = FindObjectsOfType<WallTileLink>();
+        if (all == null || all.Length == 0) return false;
+
+        List<WallTileLink> damaged = null;
+        for (int i = 0; i < all.Length; i++)
         {
-            damaged ??= new List<WallTileLink>();
-            damaged.Add(w);
+            var w = all[i];
+            if (w == null) continue;
+            if (w.IsDamaged)
+            {
+                damaged ??= new List<WallTileLink>();
+                damaged.Add(w);
+            }
         }
+
+        if (damaged == null || damaged.Count == 0) return false;
+
+        var pick = damaged[Random.Range(0, damaged.Count)];
+
+        float before = pick.Hp;
+        float max = pick.MaxHpPublic;
+
+        pick.Heal(amount);
+
+        Debug.Log($"[ForgeHeal] healed wall q={pick.q} r={pick.r} +{amount:0} ({before:0}->{pick.Hp:0}) / {max:0}");
+        return true;
     }
-
-    if (damaged == null || damaged.Count == 0) return false;
-
-    var pick = damaged[Random.Range(0, damaged.Count)];
-
-    float before = pick.Hp;
-    float max = pick.MaxHpPublic;
-
-    pick.Heal(amount);
-
-    Debug.Log($"[ForgeHeal] healed wall q={pick.q} r={pick.r} +{amount:0} ({before:0}->{pick.Hp:0}) / {max:0}");
-    return true;
-}
-
 }

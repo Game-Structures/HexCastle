@@ -1,38 +1,64 @@
 using UnityEngine;
+using UnityEngine.Events;
 
 public sealed class CastleHealth : MonoBehaviour
 {
-    [SerializeField] private int maxHp = 3000;
-    private int hp;
-    private bool isDead;
+    public UnityEvent<int, int> onHealthChanged; // current, max
+    public UnityEvent onCastleDestroyed;
 
-public int CurrentHp => hp;
-public int MaxHp => maxHp;
+    [SerializeField] private int maxHp = 3000;
+    [SerializeField] private int hp = 3000;
+
+    [Header("Damage popup")]
+    [SerializeField] private bool showDamagePopup = true;
+    [SerializeField] private Vector3 popupOffset = new Vector3(0f, 2.2f, 0f);
+
+    public int CurrentHp => hp;
+    public int MaxHp => maxHp;
+
     private void Awake()
     {
-        GameState.Reset();
-        hp = maxHp;
-        Debug.Log($"Castle HP: {hp}");
+        hp = Mathf.Clamp(hp, 0, maxHp);
+        onHealthChanged?.Invoke(hp, maxHp);
+    }
+
+    public void SetMaxHp(int newMax, bool healToFull = true)
+    {
+        maxHp = Mathf.Max(1, newMax);
+        if (healToFull) hp = maxHp;
+        hp = Mathf.Clamp(hp, 0, maxHp);
+        onHealthChanged?.Invoke(hp, maxHp);
     }
 
     public void Damage(int amount)
     {
-        if (isDead) return;
-        if (GameState.IsGameOver) return;
+        if (amount <= 0) return;
+        if (hp <= 0) return;
 
-        hp -= amount;
-        Debug.Log($"Castle HP: {hp}");
+        if (showDamagePopup)
+        {
+            DamagePopupWorld.Spawn(
+                transform.position + popupOffset,
+                amount,
+                DamagePopupWorld.PopupKind.PlayerDamaged
+            );
+        }
+
+        hp = Mathf.Max(0, hp - amount);
+        onHealthChanged?.Invoke(hp, maxHp);
 
         if (hp <= 0)
         {
-            hp = 0;
-            isDead = true;
-
-            GameState.IsGameOver = true;
-            Debug.Log("GAME OVER");
-
-            if (GameOverUI.Instance != null)
-                GameOverUI.Instance.Show();
+            onCastleDestroyed?.Invoke();
         }
+    }
+
+    public void Heal(int amount)
+    {
+        if (amount <= 0) return;
+        if (hp <= 0) return;
+
+        hp = Mathf.Min(maxHp, hp + amount);
+        onHealthChanged?.Invoke(hp, maxHp);
     }
 }
