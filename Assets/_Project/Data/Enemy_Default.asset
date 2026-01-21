@@ -16,4 +16,4 @@ MonoBehaviour:
   speed: 1
   attackDamage: 10
   attackInterval: 3
-  xpReward: 50
+  xpReward: 5
