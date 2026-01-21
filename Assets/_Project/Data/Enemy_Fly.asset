@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: Enemy_Fly
   m_EditorClassIdentifier: 
   maxHp: 50
-  speed: 2
+  speed: 1.5
   attackDamage: 22
   attackInterval: 7
+  xpReward: 30

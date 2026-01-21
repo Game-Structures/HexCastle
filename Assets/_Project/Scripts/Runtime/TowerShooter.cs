@@ -44,6 +44,9 @@ public sealed class TowerShooter : MonoBehaviour
 
     private LineRenderer beam;
 
+    // XP source
+    private TowerProgress progress;
+
     // Cannon aoe pending
     private Vector3 aoeCenter;
     private float aoeRadiusWorld;
@@ -113,6 +116,8 @@ public sealed class TowerShooter : MonoBehaviour
         var t = transform.Find("Muzzle");
         muzzle = (t != null) ? t : transform;
 
+        progress = GetComponent<TowerProgress>();
+
         beam = GetComponent<LineRenderer>();
         if (beam == null)
             beam = gameObject.AddComponent<LineRenderer>();
@@ -150,7 +155,7 @@ public sealed class TowerShooter : MonoBehaviour
         if (type == TowerType.Magic)
         {
             DrawBeamTo(target.transform.position, isFlame: false);
-            target.Damage(damage);
+            target.Damage(damage, progress);
 
             if (debugLogs) Debug.Log($"[TowerShooter] MAGIC beam -> {target.name} dmg={damage}");
             return;
@@ -255,7 +260,8 @@ public sealed class TowerShooter : MonoBehaviour
             Mathf.Max(0.1f, projectileSpeed),
             Mathf.Max(0.01f, projectileHitRadius),
             y,
-            debugLogs
+            debugLogs,
+            progress
         );
 
         if (type == TowerType.Cannon)
@@ -301,7 +307,7 @@ public sealed class TowerShooter : MonoBehaviour
 
             float d2 = (e.transform.position - aoeCenter).sqrMagnitude;
             if (d2 <= r2)
-                e.Damage(aoeDamage);
+                e.Damage(aoeDamage, progress);
         }
 
         aoeRadiusWorld = 0f;
@@ -374,7 +380,22 @@ public sealed class TowerShooter : MonoBehaviour
 
             float d2 = (e.transform.position - center).sqrMagnitude;
             if (d2 <= r2)
-                e.Damage(dmg);
+                e.Damage(dmg, progress);
         }
     }
+    public void ModifyDamageMultiplier(float mul)
+{
+    damage = Mathf.Max(1, Mathf.RoundToInt(damage * mul));
+}
+
+public void ModifyFireRateMultiplier(float mul)
+{
+    fireInterval = Mathf.Max(0.02f, fireInterval / Mathf.Max(0.01f, mul));
+}
+
+public void AddRangeTiles(int add)
+{
+    rangeTiles = Mathf.Max(0, rangeTiles + add);
+}
+
 }

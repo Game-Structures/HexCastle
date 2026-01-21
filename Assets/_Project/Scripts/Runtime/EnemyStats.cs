@@ -8,4 +8,7 @@ public sealed class EnemyStats : ScriptableObject
 
     public int attackDamage = 50;
     public float attackInterval = 5f;
+
+    [Header("Progression")]
+    [Min(0)] public int xpReward = 10;
 }

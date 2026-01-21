@@ -86,13 +86,14 @@ public sealed class CastleShooter : MonoBehaviour
         }
 
         proj.Init(
-            target,
-            damage,
-            Mathf.Max(0.1f, projectileSpeed),
-            Mathf.Max(0.01f, projectileHitRadius),
-            y,
-            debugLogs
-        );
+    target,
+    damage,
+    Mathf.Max(0.1f, projectileSpeed),
+    Mathf.Max(0.01f, projectileHitRadius),
+    y,
+    debugLogs,
+    null
+);
     }
 
     private EnemyHealth FindNearestEnemyInRange()

@@ -10,7 +10,9 @@ public sealed class CastleProjectile : MonoBehaviour
 
     private bool debugLogs;
 
-    public void Init(EnemyHealth t, int dmg, float spd, float hitR, float y, bool logs)
+    private TowerProgress sourceTower;
+
+    public void Init(EnemyHealth t, int dmg, float spd, float hitR, float y, bool logs, TowerProgress source)
     {
         target = t;
         damage = dmg;
@@ -18,6 +20,7 @@ public sealed class CastleProjectile : MonoBehaviour
         hitRadius = Mathf.Max(0.01f, hitR);
         fixedY = y;
         debugLogs = logs;
+        sourceTower = source;
     }
 
     private void Update()
@@ -43,7 +46,7 @@ public sealed class CastleProjectile : MonoBehaviour
         float dSqr = (transform.position - tp).sqrMagnitude;
         if (dSqr <= hitRadius * hitRadius)
         {
-            target.Damage(damage);
+            target.Damage(damage, sourceTower);
 
             if (debugLogs)
                 Debug.Log($"[CastleShooter] Hit {target.name} for {damage}");
