@@ -37,6 +37,16 @@ public class CameraPanZoom : MonoBehaviour
     {
         if (cam == null) return;
 
+        // NEW: если идет размещение — камера не реагирует вообще
+        if (PlacementInputLock.IsPlacing)
+        {
+            _blockMouseUntilUp = false;
+            _mousePanning = false;
+            _touchPanning = false;
+            _blockTouchFingerId = -1;
+            return;
+        }
+
 #if UNITY_EDITOR || UNITY_STANDALONE
         HandleMouse();
 #endif
@@ -46,7 +56,6 @@ public class CameraPanZoom : MonoBehaviour
 #if UNITY_EDITOR || UNITY_STANDALONE
     void HandleMouse()
     {
-        // zoom колесиком (для теста в редакторе)
         float scroll = Input.mouseScrollDelta.y;
         if (Mathf.Abs(scroll) > 0.001f)
         {
@@ -105,7 +114,6 @@ public class CameraPanZoom : MonoBehaviour
             return;
         }
 
-        // Если палец "заблокирован UI", игнорируем камеру до отпускания этого пальца
         if (_blockTouchFingerId != -1)
         {
             for (int i = 0; i < tc; i++)
@@ -123,13 +131,11 @@ public class CameraPanZoom : MonoBehaviour
             if (_blockTouchFingerId != -1) return;
         }
 
-        // Pinch zoom (2 пальца)
         if (tc >= 2)
         {
             Touch t0 = Input.GetTouch(0);
             Touch t1 = Input.GetTouch(1);
 
-            // если какой-то из двух пальцев начался на UI — блокируем до отпускания
             if (blockCameraWhenStartedOverUI)
             {
                 if (t0.phase == TouchPhase.Began && IsTouchOverUI(t0.fingerId))
@@ -158,7 +164,6 @@ public class CameraPanZoom : MonoBehaviour
             return;
         }
 
-        // 1 палец — пан
         Touch touch0 = Input.GetTouch(0);
 
         if (touch0.phase == TouchPhase.Began)

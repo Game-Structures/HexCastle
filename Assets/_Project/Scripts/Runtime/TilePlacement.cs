@@ -699,4 +699,70 @@ if (slot != null)
 
         return false;
     }
+    // NEW: API для WallPair / UI
+public bool TryGetCell(int q, int r, out HexCellView cell)
+{
+    var key = new Vector2Int(q, r);
+    if (cells.Count == 0) RebuildCellCache();
+
+    if (cells.TryGetValue(key, out cell) && cell != null)
+        return true;
+
+    cell = null;
+    return false;
+}
+
+// Проверка "можно ли вообще поставить сюда" без требования подключения.
+// externalConnection = есть ли подключение к существующим стенам (или центру), НЕ считая excludeKey.
+// NEW: Preview check for single + WallPair
+// externalConnection = есть ли подключение к существующим стенам/центру, НЕ считая excludeKey.
+public bool CanPreviewPlaceWall(int q, int r, WallTileType type, int rotation, bool allowReplace, Vector2Int excludeKey, out int mask, out bool externalConnection)
+{
+    rotation = Mod6(rotation);
+    mask = 0;
+    externalConnection = false;
+
+    if (cells.Count == 0) RebuildCellCache();
+
+    var key = new Vector2Int(q, r);
+    if (!cells.ContainsKey(key)) return false;
+    if (!IsCellBuildable(key)) return false;
+
+    int baseMask = GetBaseMask(type);
+    if (baseMask == 0) return false;
+
+    mask = RotateMask(baseMask, rotation);
+
+    if (!allowReplace && placed.ContainsKey(key))
+        return false;
+
+    for (int dir = 0; dir < 6; dir++)
+    {
+        if ((mask & (1 << dir)) == 0) continue;
+
+        var nKey = key + AxialDirs[dir];
+
+        if (nKey == excludeKey)
+            continue;
+
+        if (placed.TryGetValue(nKey, out var n))
+        {
+            if ((n.mask & (1 << Opp(dir))) != 0)
+            {
+                externalConnection = true;
+                break;
+            }
+        }
+
+        if (nKey.x == 0 && nKey.y == 0)
+        {
+            externalConnection = true;
+            break;
+        }
+    }
+
+    return true;
+}
+
+
 }

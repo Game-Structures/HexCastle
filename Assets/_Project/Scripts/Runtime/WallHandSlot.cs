@@ -10,17 +10,30 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
 
     [Header("UI")]
     public TMP_Text label;
-    public Image icon;
+    public Image icon;      // основной значок
+    public Image iconB;     // второй значок для пары (создается автоматически)
 
     private WallDragController drag;
 
     [Header("Data")]
     [SerializeField] private HandItemKind kind = HandItemKind.None;
-    [SerializeField] private WallTileType tileType = WallTileType.None;   // for Wall / Combo
-    [SerializeField] private TowerType towerType = TowerType.Archer;      // for Tower / Combo
 
-    // rotation for Wall / Combo (0..5)
+    // Single / Combo
+    [SerializeField] private WallTileType tileType = WallTileType.None;
+    [SerializeField] private TowerType towerType = TowerType.Archer;
+
+    // rotation for Wall / Combo / WallPair (0..5)
     [SerializeField] private int rotationSteps;
+
+    // WallPair data
+    [Header("WallPair")]
+    [SerializeField] private WallTileType pairTypeB = WallTileType.None;
+    [SerializeField] private int pairBaseDir;     // 0..5
+    [SerializeField] private int pairRotOffsetA;  // 0..5
+    [SerializeField] private int pairRotOffsetB;  // 0..5
+
+    [SerializeField] private Sprite ghostSpriteA;
+    [SerializeField] private Sprite ghostSpriteB;
 
     // Compatibility
     public bool HasTile => kind != HandItemKind.None;
@@ -30,12 +43,21 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
     public WallTileType WallType => tileType;
     public void ClearItem() => ClearTile();
 
-    // New
     public HandItemKind Kind => kind;
     public TowerType TowerType => towerType;
 
     public int GetRotation() => rotationSteps;
-    public Sprite GetSprite() => icon != null ? icon.sprite : null;
+
+    // WallPair getters
+    public bool IsWallPair => kind == HandItemKind.WallPair;
+    public WallTileType PairTypeA => tileType;
+    public WallTileType PairTypeB => pairTypeB;
+    public int PairBaseDir => Mod6(pairBaseDir);
+    public int PairRotOffsetA => Mod6(pairRotOffsetA);
+    public int PairRotOffsetB => Mod6(pairRotOffsetB);
+
+    public Sprite GetGhostSpriteA() => ghostSpriteA != null ? ghostSpriteA : (icon != null ? icon.sprite : null);
+    public Sprite GetGhostSpriteB() => ghostSpriteB != null ? ghostSpriteB : null;
 
     private void Awake()
     {
@@ -55,6 +77,8 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
             if (icon == null) icon = GetComponentInChildren<Image>(true);
         }
 
+        EnsureIconB();
+
         if (name.StartsWith("TileSlot"))
         {
             if (int.TryParse(name.Replace("TileSlot", ""), out int idx))
@@ -62,6 +86,63 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
         }
 
         ApplyIconRotation();
+        UpdatePairVisual(false);
+    }
+
+    private void EnsureIconB()
+    {
+        if (icon == null) return;
+        if (iconB != null) return;
+
+        var t = transform.Find("IconB");
+        if (t != null)
+        {
+            iconB = t.GetComponent<Image>();
+            return;
+        }
+
+        var go = new GameObject("IconB", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        go.transform.SetParent(icon.transform.parent, false);
+
+        iconB = go.GetComponent<Image>();
+        iconB.preserveAspect = true;
+
+        var rt = iconB.rectTransform;
+        rt.anchorMin = icon.rectTransform.anchorMin;
+        rt.anchorMax = icon.rectTransform.anchorMax;
+        rt.pivot = icon.rectTransform.pivot;
+
+        // позицию/размер выставим в UpdatePairVisual
+        iconB.enabled = false;
+    }
+
+    private void UpdatePairVisual(bool isPair)
+    {
+        if (iconB == null || icon == null) return;
+
+        if (!isPair)
+        {
+            iconB.enabled = false;
+            iconB.sprite = null;
+            return;
+        }
+
+        // Показать второй гекс поверх, сместив вправо
+        iconB.enabled = (iconB.sprite != null);
+
+        var main = icon.rectTransform;
+        var rt = iconB.rectTransform;
+
+        rt.sizeDelta = main.sizeDelta * 0.80f;
+        rt.localScale = Vector3.one;
+
+        // смещение в локальных координатах
+        float dx = (main.sizeDelta.x * 0.32f);
+        float dy = (main.sizeDelta.y * -0.05f);
+        rt.anchoredPosition = main.anchoredPosition + new Vector2(dx, dy);
+
+        // чтобы второй был “сверху”
+        iconB.transform.SetAsLastSibling();
     }
 
     // --- Walls ---
@@ -69,20 +150,26 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
     {
         kind = (t == WallTileType.None) ? HandItemKind.None : HandItemKind.Wall;
         tileType = t;
+
+        pairTypeB = WallTileType.None;
+        pairBaseDir = 0;
+        pairRotOffsetA = 0;
+        pairRotOffsetB = 0;
+
+        ghostSpriteA = null;
+        ghostSpriteB = null;
+
         if (label != null) label.text = "";
         ApplyIconRotation();
+
+        UpdatePairVisual(false);
     }
 
     public void SetTile(WallTileType t, Sprite s)
     {
         SetTile(t);
         SetSprite(s);
-    }
-
-    public void SetWall(WallTileType t, int rotSteps, Sprite s)
-    {
-        SetTile(t, s);
-        SetRotation(rotSteps);
+        ghostSpriteA = s;
     }
 
     public void SetRotation(int rotSteps)
@@ -91,17 +178,73 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
         ApplyIconRotation();
     }
 
+    // --- WallPair ---
+    public void SetWallPair(
+        WallTileType a, WallTileType b,
+        int baseDir,
+        int rotSteps,
+        int rotOffsetA,
+        int rotOffsetB,
+        Sprite iconA,
+        Sprite iconB_,
+        Sprite ghostA,
+        Sprite ghostB_)
+    {
+        kind = HandItemKind.WallPair;
+
+        tileType = a;
+        pairTypeB = b;
+
+        pairBaseDir = Mod6(baseDir);
+        pairRotOffsetA = Mod6(rotOffsetA);
+        pairRotOffsetB = Mod6(rotOffsetB);
+
+        rotationSteps = Mod6(rotSteps);
+
+        if (label != null) label.text = "";
+
+        EnsureIconB();
+
+        // В слоте показываем 2 иконки (A и B)
+        SetSprite(iconA);
+
+        if (iconB != null)
+        {
+            iconB.sprite = iconB_;
+            iconB.enabled = (iconB_ != null);
+        }
+
+        // Ghost – реальные спрайты стен
+        ghostSpriteA = ghostA != null ? ghostA : iconA;
+        ghostSpriteB = ghostB_ != null ? ghostB_ : iconB_;
+
+        ApplyIconRotation();
+        UpdatePairVisual(true);
+    }
+
     // --- Towers ---
     public void SetTower(TowerType t, Sprite s)
     {
         kind = HandItemKind.Tower;
         towerType = t;
+
         tileType = WallTileType.None;
+
+        pairTypeB = WallTileType.None;
+        pairBaseDir = 0;
+        pairRotOffsetA = 0;
+        pairRotOffsetB = 0;
+
         rotationSteps = 0;
+
+        ghostSpriteA = s;
+        ghostSpriteB = null;
 
         if (label != null) label.text = "";
         SetSprite(s);
         ApplyIconRotation();
+
+        UpdatePairVisual(false);
     }
 
     // --- Combo (Wall + Tower) ---
@@ -112,21 +255,49 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
         towerType = tower;
         rotationSteps = Mod6(rotSteps);
 
+        pairTypeB = WallTileType.None;
+        pairBaseDir = 0;
+        pairRotOffsetA = 0;
+        pairRotOffsetB = 0;
+
+        ghostSpriteA = s;
+        ghostSpriteB = null;
+
         if (label != null) label.text = "";
         SetSprite(s);
         ApplyIconRotation();
+
+        UpdatePairVisual(false);
     }
 
     public void ClearTile()
     {
         kind = HandItemKind.None;
+
         tileType = WallTileType.None;
         towerType = TowerType.Archer;
+
+        pairTypeB = WallTileType.None;
+        pairBaseDir = 0;
+        pairRotOffsetA = 0;
+        pairRotOffsetB = 0;
+
         rotationSteps = 0;
+
+        ghostSpriteA = null;
+        ghostSpriteB = null;
 
         if (label != null) label.text = "";
         SetSprite(null);
+
+        if (iconB != null)
+        {
+            iconB.sprite = null;
+            iconB.enabled = false;
+        }
+
         ApplyIconRotation();
+        UpdatePairVisual(false);
     }
 
     public void SetSprite(Sprite s)
@@ -139,7 +310,12 @@ public sealed class WallHandSlot : MonoBehaviour, IBeginDragHandler, IDragHandle
     private void ApplyIconRotation()
     {
         if (icon == null) return;
+
         icon.rectTransform.localEulerAngles = new Vector3(0f, 0f, -rotationSteps * 60f);
+
+        // второй значок тоже крутим так же (достаточно для понятности “это поворачивается”)
+        if (iconB != null)
+            iconB.rectTransform.localEulerAngles = new Vector3(0f, 0f, -rotationSteps * 60f);
     }
 
     private static int Mod6(int v)
