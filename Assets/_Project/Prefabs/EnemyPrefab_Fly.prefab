@@ -164,6 +164,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 635d83d65e1f23a459c9d3daf8c11b3d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  hideInForest: 1
+  isFlying: 1
+  hideInForest: 0
   hideInFog: 1
   hideRenderers: 1
+  revealWhenTouchingStructures: 1
+  wallNameContains: WallPrefab
+  castleObjectName: Castle

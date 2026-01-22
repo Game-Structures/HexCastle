@@ -20,6 +20,9 @@ public sealed class EnemyWallDamage : MonoBehaviour
     private WallTileLink currentLink;
     private float attackTimer;
 
+    // НОВОЕ: внешний флаг – "я атакую стену/строение"
+    public bool IsAttacking => holding && currentLink != null;
+
     public void SetStats(EnemyStats s) => stats = s;
 
     private void Awake()
@@ -60,7 +63,7 @@ public sealed class EnemyWallDamage : MonoBehaviour
         // “контакт живой” – продлеваем удержание
         releaseAt = Time.time + Mathf.Max(0.02f, releaseDelay);
 
-        // ВАЖНО: “удар сразу” только при первом захвате, а не при смене коллайдера
+        // “удар сразу” только при первом захвате
         bool startingHold = !holding;
 
         holding = true;

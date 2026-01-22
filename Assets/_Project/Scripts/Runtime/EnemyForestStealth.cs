@@ -6,12 +6,17 @@ public sealed class EnemyForestStealth : MonoBehaviour
 {
     public bool IsHidden { get; private set; }
 
+    [Header("Unit kind")]
+    public bool isFlying = false;
+
     [Header("Hide rules")]
     public bool hideInForest = true;
     public bool hideInFog = true;
 
-    [Tooltip("Выключать визуал врага, когда он скрыт.")]
     public bool hideRenderers = true;
+
+    [Header("Reveal while attacking")]
+    public bool revealWhenAttacking = true;
 
     private Dictionary<Vector2Int, HexCellView> cellsByAxial;
     private float timer;
@@ -19,8 +24,12 @@ public sealed class EnemyForestStealth : MonoBehaviour
     private Renderer[] rends;
     private bool lastHidden;
 
+    private EnemyWallDamage wallDamage;
+
     private void Awake()
     {
+        wallDamage = GetComponent<EnemyWallDamage>();
+
         BuildCache();
         rends = GetComponentsInChildren<Renderer>(true);
         lastHidden = IsHidden;
@@ -48,21 +57,27 @@ public sealed class EnemyForestStealth : MonoBehaviour
         if (cellsByAxial == null || cellsByAxial.Count == 0)
             BuildCache();
 
-        var cell = FindNearestCell(transform.position);
+        // КЛЮЧ: если атакует строение – всегда видим
+        if (revealWhenAttacking && wallDamage != null && wallDamage.IsAttacking)
+        {
+            SetHidden(false);
+            return;
+        }
 
+        var cell = FindNearestCell(transform.position);
         bool hidden = false;
 
         if (cell != null)
         {
-            // 1) Forest
-            if (hideInForest)
+            // Forest – летающих не скрываем
+            if (hideInForest && !isFlying)
             {
                 var tag = cell.GetComponent<MapTerrainTag>();
                 if (tag != null && tag.type == MapTerrainType.Forest)
                     hidden = true;
             }
 
-            // 2) Fog (если клетка не раскрыта)
+            // Fog
             if (!hidden && hideInFog)
             {
                 var fog = cell.GetComponent<MapTileFogLink>();
@@ -71,6 +86,11 @@ public sealed class EnemyForestStealth : MonoBehaviour
             }
         }
 
+        SetHidden(hidden);
+    }
+
+    private void SetHidden(bool hidden)
+    {
         IsHidden = hidden;
 
         if (IsHidden != lastHidden)

@@ -36,6 +36,9 @@ public sealed class EnemyMover : MonoBehaviour
 
     public EnemyTargetKind TargetKind => targetKind;
 
+    // НОВОЕ: стелсу нужно знать, что враг сейчас бьёт стену/замок
+    public bool IsAttacking => wallTarget != null || castleTarget != null;
+
     public void SetTargetKind(EnemyTargetKind kind)
     {
         targetKind = kind;
