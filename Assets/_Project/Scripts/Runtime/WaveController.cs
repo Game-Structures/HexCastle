@@ -21,6 +21,10 @@ public sealed class WaveController : MonoBehaviour
     [Header("WavePlan (manual subwaves)")]
     [SerializeField] private WavePlan wavePlan;
 
+    [Header("Dungeon Notice")]
+    [SerializeField] private float dungeonBannerSeconds = 2.5f;
+    [SerializeField] private bool dungeonBackupLog = true;
+
     public Phase CurrentPhase { get; private set; } = Phase.Build;
     public int WaveNumber => waveNumber;
 
@@ -46,7 +50,6 @@ public sealed class WaveController : MonoBehaviour
     {
         GoldBank.Reset(startGold);
 
-        // эффекты в начале Build-фазы (старт игры)
         if (BuildingEffectsManager.Instance != null)
             BuildingEffectsManager.Instance.OnBuildRoundStart();
 
@@ -94,7 +97,6 @@ public sealed class WaveController : MonoBehaviour
         if (spawner == null)
             spawner = FindFirstObjectByType<EnemySpawnerSimple>();
 
-        // stop previous planned routine if any
         if (planRoutine != null)
         {
             StopCoroutine(planRoutine);
@@ -103,7 +105,6 @@ public sealed class WaveController : MonoBehaviour
 
         CurrentPhase = Phase.Combat;
 
-        // If there is a WavePlan entry for this wave – use it
         if (wavePlan != null && wavePlan.TryGetRound(waveNumber, out var round) && round != null && round.subWaves != null && round.subWaves.Length > 0)
         {
             planActive = true;
@@ -116,7 +117,6 @@ public sealed class WaveController : MonoBehaviour
             return;
         }
 
-        // fallback old behavior
         planActive = false;
         planSpawningComplete = false;
 
@@ -166,33 +166,58 @@ public sealed class WaveController : MonoBehaviour
 
     private void EndCombatToBuild()
     {
-        // эффекты в конце Combat-фазы (кузница лечит здесь)
         if (BuildingEffectsManager.Instance != null)
             BuildingEffectsManager.Instance.OnCombatRoundEnd();
 
-        // reward for current wave
         int reward = GetRewardForWave(waveNumber);
         GoldBank.Add(reward);
         Debug.Log($"Wave reward: +{reward} gold");
 
-        // next wave
         waveNumber++;
         CurrentPhase = Phase.Build;
 
-        // reset plan flags
         planActive = false;
         planSpawningComplete = false;
         planRoutine = null;
 
-        // эффекты в начале новой Build-фазы (банк даёт монеты здесь)
         if (BuildingEffectsManager.Instance != null)
             BuildingEffectsManager.Instance.OnBuildRoundStart();
 
-        // new hand at BUILD start
         if (hand == null) hand = FindFirstObjectByType<WallHandManager>();
         if (hand != null) hand.NewRoundHand();
 
         Debug.Log($"Phase: BUILD (wave {waveNumber})");
+
+        // Уведомление на BUILD перед началом 5/10/15...
+        TryShowDungeonNoticeOnBuild();
+    }
+
+    private void TryShowDungeonNoticeOnBuild()
+    {
+        if (spawner == null)
+            spawner = FindFirstObjectByType<EnemySpawnerSimple>();
+
+        if (spawner == null)
+        {
+            if (dungeonBackupLog) Debug.Log("[DungeonNotice] spawner missing");
+            return;
+        }
+
+        // Нужен метод TryPrepareEmpoweredWave в EnemySpawnerSimple.
+        // Если его нет – в логе увидишь "method missing".
+        if (!spawner.TryPrepareEmpoweredWave(waveNumber, out string side))
+        {
+            if (dungeonBackupLog) Debug.Log($"[DungeonNotice] not empowered or side not prepared (wave={waveNumber})");
+            return;
+        }
+
+        string msg = $"DUNGEON: {side}";
+        var hud = FindFirstObjectByType<HUDController>();
+
+        if (hud != null) hud.ShowBanner(msg, dungeonBannerSeconds);
+
+        if (dungeonBackupLog)
+            Debug.Log($"[DungeonNotice] Phase=BUILD wave={waveNumber} msg={msg} hud={(hud != null ? "ok" : "missing")}");
     }
 
     private int GetRewardForWave(int wave)

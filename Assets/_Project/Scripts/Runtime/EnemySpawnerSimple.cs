@@ -15,6 +15,8 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
     [Header("Empowered wave")]
     [SerializeField] private int empoweredWaveEvery = 5;
     [SerializeField] private bool empoweredWaveSingleSide = true;
+
+    [Header("Debug")]
     [SerializeField] private bool logEmpoweredWave = true;
 
     private Transform castle;
@@ -37,6 +39,19 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
 
         if (grid != null && castle == null)
             castle = grid.CastleTransform;
+    }
+
+    // ВЫЗЫВАЕМ В BUILD: заранее фиксируем сторону для волны (чтобы в COMBAT она уже не менялась)
+    public bool TryPrepareEmpoweredWave(int wave, out string sideLabel)
+    {
+        sideLabel = null;
+
+        if (!IsEmpoweredWave(wave))
+            return false;
+
+        EnsureForcedSideForWave(wave);
+        sideLabel = cachedForcedSide.ToString();
+        return true;
     }
 
     public void SpawnOnePublic()
@@ -90,8 +105,9 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
 
         List<HexCellView> spawnPool = grid.EdgeCells;
 
-        if (empoweredWaveSingleSide && empoweredWaveEvery > 0 && wave % empoweredWaveEvery == 0)
+        if (IsEmpoweredWave(wave))
         {
+            // если сторона была подготовлена на BUILD – тут она не перероллится
             EnsureForcedSideForWave(wave);
 
             if (cachedSideCells.Count > 0)
@@ -99,7 +115,7 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
         }
         else
         {
-            // leaving empowered wave – drop cache so next empowered wave re-rolls side
+            // сбрасываем кеш при выходе из усиленной волны
             if (cachedForcedWave != -1 && cachedForcedWave != wave)
             {
                 cachedForcedWave = -1;
@@ -131,22 +147,26 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
             mover.SetTargetKind(kind);
             if (stats != null) mover.SetStats(stats);
 
-            // Wall damage – only for Ground enemies
             var wallDmg = go.GetComponent<EnemyWallDamage>();
             if (wallDmg == null) wallDmg = go.AddComponent<EnemyWallDamage>();
 
             wallDmg.enabled = (kind == EnemyTargetKind.Ground);
             if (stats != null) wallDmg.SetStats(stats);
 
-            Debug.Log($"[EnemySpawner] Spawned type={typeId} wave={wave} kind={kind} dmg={(stats != null ? stats.attackDamage : 50)} int={(stats != null ? stats.attackInterval : 5f)}");
             return;
         }
 
         Debug.LogWarning("EnemySpawnerSimple: no free edge cell found (maybe all blocked).");
     }
 
+    private bool IsEmpoweredWave(int wave)
+    {
+        return empoweredWaveSingleSide && empoweredWaveEvery > 0 && wave % empoweredWaveEvery == 0;
+    }
+
     private void EnsureForcedSideForWave(int wave)
     {
+        if (grid == null) grid = FindFirstObjectByType<HexGridSpawner>();
         if (grid == null) return;
 
         if (cachedForcedWave == wave && cachedSideCells.Count > 0)
@@ -158,7 +178,6 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
         cachedSideCells.Clear();
         int R = Mathf.Max(1, grid.Radius);
 
-        // EdgeCells already contains only edge cells, but we need to pick exactly one of 6 sides.
         for (int i = 0; i < grid.EdgeCells.Count; i++)
         {
             var c = grid.EdgeCells[i];
@@ -168,7 +187,7 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
         }
 
         if (logEmpoweredWave)
-            Debug.Log($"[EmpoweredWave] wave={wave} side={cachedForcedSide} edgeCells={cachedSideCells.Count}");
+            Debug.Log($"[EmpoweredWave] prepared wave={wave} side={cachedForcedSide} edgeCells={cachedSideCells.Count}");
     }
 
     private static bool IsOnSide(int q, int r, int R, HexSide side)
