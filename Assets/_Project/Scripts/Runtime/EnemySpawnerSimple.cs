@@ -1,7 +1,10 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public sealed class EnemySpawnerSimple : MonoBehaviour
 {
+    private enum HexSide { NE = 0, E = 1, SE = 2, SW = 3, W = 4, NW = 5 }
+
     [Header("Legacy (used if Enemy Types is empty)")]
     [SerializeField] private GameObject enemyPrefab;
     [SerializeField] private EnemyStats enemyStats;
@@ -9,10 +12,20 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
     [Header("Enemy Types (recommended)")]
     [SerializeField] private EnemyType[] enemyTypes;
 
+    [Header("Empowered wave")]
+    [SerializeField] private int empoweredWaveEvery = 5;
+    [SerializeField] private bool empoweredWaveSingleSide = true;
+    [SerializeField] private bool logEmpoweredWave = true;
+
     private Transform castle;
     private HexGridSpawner grid;
     private TilePlacement placement;
     private WaveController waves;
+
+    // empowered-wave cache
+    private int cachedForcedWave = -1;
+    private HexSide cachedForcedSide;
+    private readonly List<HexCellView> cachedSideCells = new List<HexCellView>(64);
 
     private void Update()
     {
@@ -75,9 +88,28 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
             return;
         }
 
+        List<HexCellView> spawnPool = grid.EdgeCells;
+
+        if (empoweredWaveSingleSide && empoweredWaveEvery > 0 && wave % empoweredWaveEvery == 0)
+        {
+            EnsureForcedSideForWave(wave);
+
+            if (cachedSideCells.Count > 0)
+                spawnPool = cachedSideCells;
+        }
+        else
+        {
+            // leaving empowered wave – drop cache so next empowered wave re-rolls side
+            if (cachedForcedWave != -1 && cachedForcedWave != wave)
+            {
+                cachedForcedWave = -1;
+                cachedSideCells.Clear();
+            }
+        }
+
         for (int attempt = 0; attempt < 30; attempt++)
         {
-            var cell = grid.EdgeCells[Random.Range(0, grid.EdgeCells.Count)];
+            var cell = spawnPool[Random.Range(0, spawnPool.Count)];
             int q = cell.q;
             int r = cell.r;
 
@@ -111,6 +143,46 @@ public sealed class EnemySpawnerSimple : MonoBehaviour
         }
 
         Debug.LogWarning("EnemySpawnerSimple: no free edge cell found (maybe all blocked).");
+    }
+
+    private void EnsureForcedSideForWave(int wave)
+    {
+        if (grid == null) return;
+
+        if (cachedForcedWave == wave && cachedSideCells.Count > 0)
+            return;
+
+        cachedForcedWave = wave;
+        cachedForcedSide = (HexSide)Random.Range(0, 6);
+
+        cachedSideCells.Clear();
+        int R = Mathf.Max(1, grid.Radius);
+
+        // EdgeCells already contains only edge cells, but we need to pick exactly one of 6 sides.
+        for (int i = 0; i < grid.EdgeCells.Count; i++)
+        {
+            var c = grid.EdgeCells[i];
+            if (c == null) continue;
+            if (IsOnSide(c.q, c.r, R, cachedForcedSide))
+                cachedSideCells.Add(c);
+        }
+
+        if (logEmpoweredWave)
+            Debug.Log($"[EmpoweredWave] wave={wave} side={cachedForcedSide} edgeCells={cachedSideCells.Count}");
+    }
+
+    private static bool IsOnSide(int q, int r, int R, HexSide side)
+    {
+        switch (side)
+        {
+            case HexSide.E:  return q == R;
+            case HexSide.W:  return q == -R;
+            case HexSide.SE: return r == R;
+            case HexSide.NW: return r == -R;
+            case HexSide.NE: return (q + r) == R;
+            case HexSide.SW: return (q + r) == -R;
+            default:         return false;
+        }
     }
 
     private EnemyType PickEnemyTypeForWave(int wave)

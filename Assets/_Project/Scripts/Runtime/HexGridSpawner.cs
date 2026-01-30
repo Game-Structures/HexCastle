@@ -11,6 +11,8 @@ public sealed class HexGridSpawner : MonoBehaviour
     [Header("Castle")]
     [SerializeField] private GameObject castlePrefab;
 
+    public int Radius => radius;
+
     public Transform CastleTransform { get; private set; }
     public List<HexCellView> EdgeCells { get; private set; } = new List<HexCellView>();
 
